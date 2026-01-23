@@ -26,6 +26,11 @@ class Config:
         "document-parse"
     )
     
+    # OpenAI API
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_VISION_MODEL: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")  # Vision용
+    
     @classmethod
     def validate(cls) -> None:
         """Validate required configuration."""
