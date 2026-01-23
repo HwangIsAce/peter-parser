@@ -1,3 +1,6 @@
-# Peter Parser (Production)
+# Peter Parser
+* document processing pipeline with optimized modules.
 
-Production document processing pipeline with optimized modules.
+# architecture
+![Architecture](assets/image.png)
+
