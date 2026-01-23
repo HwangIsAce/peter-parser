@@ -31,6 +31,20 @@ class Config:
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_VISION_MODEL: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")  # Vision용
     
+    # Chunking Configuration
+    DEFAULT_CHUNK_UNIT: str = os.getenv("DEFAULT_CHUNK_UNIT", "element")  # "page" or "element"
+    CHUNK_MAX_CONTENT_LENGTH: int = int(os.getenv("CHUNK_MAX_CONTENT_LENGTH", "10000"))  # For document summary
+    
+    # Schema Descriptions for LLM structured output
+    SCHEMA_DESCRIPTIONS = {
+        "document_summary": "Document summary",
+        "page_title": "Page title",
+        "page_script": "Presentation script",
+        "chunk_boundaries": "List of indices where new chunks should start (0-based, excluding 0)",
+        "chunk_summary": "Chunk summary",
+        "chunk_keywords": "Key terms in chunk",
+    }
+    
     @classmethod
     def validate(cls) -> None:
         """Validate required configuration."""
