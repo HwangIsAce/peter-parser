@@ -53,19 +53,19 @@ def create_chunk_enrich_node(
     def chunk_enrich_node(state: PipelineState) -> Dict[str, Any]:
         """Chunk enrichment node function.
         
-        Enriches chunks in-place by updating chunk.metadata.extra["enrichment"].
-        No separate return value needed as metadata is stored in chunks directly.
+        Does NOT modify chunks. Returns chunk_metadata separately, linked by chunk_order.
         """
         chunks = state.get("chunks", [])
         if not chunks:
             return {}
         
-        # Enrich chunks (updates chunk.metadata.extra["enrichment"] in-place)
-        enricher.enrich_chunks(chunks)
+        # Enrich chunks (does not modify chunks, returns metadata separately)
+        chunk_metadata = enricher.enrich_chunks(chunks)
         
-        # Return updated chunks (though they're modified in-place)
+        # Return chunk_metadata only (linked by chunk_order, not attached to chunks)
+        # chunks remain unchanged in state
         return {
-            "chunks": chunks,
+            "chunk_metadata": chunk_metadata,
         }
     
     return chunk_enrich_node

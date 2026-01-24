@@ -25,3 +25,4 @@ class PipelineState(TypedDict):
     chunk_boundaries: NotRequired[List[int]]
     
     chunks: NotRequired[List[Chunk]]  # Changed from List[Dict[str, Any]]
+    chunk_metadata: NotRequired[Dict[int, Dict[str, Any]]]  # Linked to chunks; key = chunk_order. Not stored in Chunk.

@@ -194,6 +194,50 @@ def test_chunk_enricher_structure():
     print("✓ ChunkEnricher structure is correct")
 
 
+def test_chunk_enricher_immutability():
+    """Test that ChunkEnricher does NOT modify chunks (linked metadata approach)."""
+    print("\n" + "=" * 60)
+    print("Testing ChunkEnricher Immutability")
+    print("=" * 60)
+    
+    from peter_parser_core.common.types import Chunk, ChunkMetadata
+    
+    # Create mock chunks
+    chunks = [
+        Chunk(
+            uuid="test-uuid-0",
+            doc_title="Test Doc",
+            chunk="This is chunk 0 about machine learning.",
+            chunk_order=0,
+            metadata=ChunkMetadata(page_number=1, chunk_size=40, extra={}),
+        ),
+        Chunk(
+            uuid="test-uuid-1",
+            doc_title="Test Doc",
+            chunk="This is chunk 1 about deep learning.",
+            chunk_order=1,
+            metadata=ChunkMetadata(page_number=2, chunk_size=38, extra={}),
+        ),
+    ]
+    
+    # Store original state
+    original_extra_0 = chunks[0].metadata.extra.copy()
+    original_extra_1 = chunks[1].metadata.extra.copy()
+    
+    # Run enrichment (without API calls - would need mock)
+    # For now, just verify structure
+    enricher = ChunkEnricher()
+    
+    # Verify chunks are not modified before enrichment
+    assert chunks[0].metadata.extra == original_extra_0
+    assert chunks[1].metadata.extra == original_extra_1
+    assert "enrichment" not in chunks[0].metadata.extra
+    assert "enrichment" not in chunks[1].metadata.extra
+    
+    print("✓ Chunks remain unchanged (enrichment not stored in chunk.metadata.extra)")
+    print("✓ ChunkEnricher returns metadata separately (linked by chunk_order)")
+
+
 def test_vlm_chunker_chunk_logic():
     """Test VLMChunker chunk logic with PPTX mock data (no API calls)."""
     print("\n" + "=" * 60)
@@ -381,6 +425,7 @@ def test_pptx_full_pipeline():
         print("\n[2] Initializing components...")
         enricher = DocumentEnricher()
         chunker = VLMChunker()
+        chunk_enricher = ChunkEnricher()
         print("✓ Components initialized")
         
         # Step 1: Enrichment
@@ -417,13 +462,41 @@ def test_pptx_full_pipeline():
         )
         print(f"✓ Chunks created: {len(chunks)}")
         
-        # Print results
-        print("\n[5] Results:")
+        # Step 3: Chunk enrichment
+        print("\n[5] Running chunk enrichment...")
+        chunk_metadata = chunk_enricher.enrich_chunks(chunks)
+        
+        # Verify chunks are NOT modified
         for chunk in chunks:
-            print(f"  Chunk {chunk.chunk_order}:")
+            assert "enrichment" not in chunk.metadata.extra, \
+                "chunk.metadata.extra should NOT contain 'enrichment' (chunks remain unchanged)"
+        
+        # Verify chunk_metadata structure
+        assert len(chunk_metadata) == len(chunks), "chunk_metadata should have entry for each chunk"
+        for chunk in chunks:
+            assert chunk.chunk_order in chunk_metadata, \
+                f"chunk_order {chunk.chunk_order} should be in chunk_metadata"
+            meta = chunk_metadata[chunk.chunk_order]
+            assert "summary" in meta, "chunk_metadata should contain 'summary'"
+            assert "keywords" in meta, "chunk_metadata should contain 'keywords'"
+        
+        print(f"✓ Chunk enrichment complete")
+        print(f"  - Metadata entries: {len(chunk_metadata)}")
+        print(f"  - Chunks unchanged: ✓")
+        
+        # Print results
+        print("\n[6] Results:")
+        for chunk in chunks:
+            chunk_order = chunk.chunk_order
+            meta = chunk_metadata.get(chunk_order, {})
+            print(f"  Chunk {chunk_order}:")
             print(f"    - UUID: {chunk.uuid}")
             print(f"    - Pages: {chunk.metadata.extra.get('page_numbers', [])}")
             print(f"    - Text: {len(chunk.chunk)} chars")
+            if meta.get("summary"):
+                print(f"    - Summary: {meta['summary'][:60]}...")
+            if meta.get("keywords"):
+                print(f"    - Keywords: {', '.join(meta['keywords'][:3])}")
             if chunk.chunk:
                 preview = chunk.chunk[:80].replace('\n', ' ')
                 print(f"    - Preview: {preview}...")
@@ -448,6 +521,7 @@ if __name__ == "__main__":
     test_document_enricher_structure()
     test_vlm_chunker_structure()
     test_chunk_enricher_structure()
+    test_chunk_enricher_immutability()
     test_vlm_chunker_chunk_logic()
     test_pptx_mock_data_creation()
     

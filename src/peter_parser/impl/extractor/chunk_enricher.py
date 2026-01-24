@@ -32,11 +32,13 @@ class ChunkEnricher:
     ) -> Dict[int, Dict[str, Any]]:
         """Enrich chunks with metadata.
         
+        Does NOT modify chunks. Returns metadata separately, linked by chunk_order.
+        
         Args:
-            chunks: List of Chunk objects
+            chunks: List of Chunk objects (read-only, not modified)
         
         Returns:
-            Dict mapping chunk_order to metadata
+            Dict mapping chunk_order to metadata {summary, keywords}
         """
         chunk_metadata = {}
         
@@ -51,12 +53,7 @@ class ChunkEnricher:
                 value_attr="description"
             )
             
-            # Update chunk's metadata.extra with enrichment results
-            chunk.metadata.extra["enrichment"] = {
-                "summary": result.summary,
-                "keywords": result.keywords,
-            }
-            
+            # Store metadata separately (linked by chunk_order, not attached to chunk)
             chunk_metadata[chunk_idx] = {
                 "summary": result.summary,
                 "keywords": result.keywords,

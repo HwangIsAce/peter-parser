@@ -7,7 +7,7 @@ from peter_parser.graph.states import PipelineState
 from peter_parser.graph.nodes.parse import create_parser_node
 from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
-from peter_parser.graph.nodes.extract import create_extract_node
+from peter_parser.graph.nodes.extract import create_extract_node, create_chunk_enrich_node
 from peter_parser.graph.nodes.chunk import create_chunk_node
 
 class PipelineFlow:
@@ -39,10 +39,12 @@ class PipelineFlow:
         graph.add_node("parse", create_parser_node(self.parser))
         graph.add_node("enrich", create_extract_node())
         graph.add_node("chunk", create_chunk_node())
+        graph.add_node("chunk_enrich", create_chunk_enrich_node())
         
         graph.set_entry_point("parse")
         graph.add_edge("parse", "enrich")
         graph.add_edge("enrich", "chunk")
+        graph.add_edge("chunk", "chunk_enrich")
         
         return graph.compile()
     
