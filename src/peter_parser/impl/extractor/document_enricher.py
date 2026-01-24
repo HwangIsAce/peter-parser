@@ -93,12 +93,18 @@ class DocumentEnricher:
     ) -> Dict[str, Any]:
         """Enrich document with summary and metadata.
         
+        Does NOT modify parsed_document. Returns enrichment separately, linked by id:
+        - document_summary: linked to document (1:1).
+        - item_metadata: linked to elements; key = element_id. Same page -> same
+          metadata; each element on that page gets an entry.
+        
         Args:
-            parsed_document: Parsed document
+            parsed_document: Parsed document (read-only, not modified)
             chunk_unit: Chunking unit ("page" or "element")
         
         Returns:
-            Dict with parsed_document (updated), chunk_unit
+            Dict with document_summary, item_metadata, chunk_unit.
+            parsed_document is NOT returned (original kept unchanged).
         """
         chunk_unit = chunk_unit or Config.DEFAULT_CHUNK_UNIT
         
@@ -128,34 +134,15 @@ class DocumentEnricher:
         )
         document_summary = summary_result.summary
         
-        # 2. Update ParsedDocument with summary
-        # Try to update content.summary
-        updated_content = None
-        if hasattr(parsed_document, 'content'):
-            if isinstance(parsed_document.content, dict):
-                updated_content = {**parsed_document.content, "summary": document_summary}
-            elif hasattr(parsed_document.content, 'model_copy'):
-                # Pydantic model
-                updated_content = parsed_document.content.model_copy(update={"summary": document_summary})
-            elif hasattr(parsed_document.content, 'copy'):
-                # Regular object with copy
-                updated_content = parsed_document.content.copy()
-                updated_content.summary = document_summary
-        
-        # 3. Page metadata (VLM per page if images available, else LLM)
-        updated_elements = []
-        if chunk_unit == "page" and hasattr(parsed_document, 'elements') and parsed_document.elements:
-            # Group elements by page_number
-            page_metadata = {}
-            
+        # 2. Page metadata (VLM per page if images available, else LLM)
+        # Store as item_metadata with element_id as key (link to original elements).
+        # Same page -> same metadata; assign to each element on that page.
+        item_metadata = {}
+        if chunk_unit == "page" and hasattr(parsed_document, "elements") and parsed_document.elements:
             for page in parsed_document.pages:
                 page_number = page.page_number
-                
-                # Try to get page images
                 page_images = self._get_page_images(parsed_document, page_number)
-                
                 if page_images:
-                    # Use VLM with images
                     script_result = self.vlm.structure_output(
                         instruction=PAGE_SCRIPT_PROMPT,
                         images=page_images,
@@ -163,62 +150,19 @@ class DocumentEnricher:
                         value_attr="description"
                     )
                 else:
-                    # Fallback to LLM with text
                     script_result = self.llm.structure_output(
                         instruction=f"{PAGE_SCRIPT_PROMPT}\n\n<SLIDE_TEXT>\n{page.text}\n</SLIDE_TEXT>",
                         key_attr="name",
                         value_attr="description"
                     )
-                
-                # Store metadata for this page
-                page_metadata[page_number] = {
-                    "title": script_result.title,
-                    "script": script_result.script
-                }
-            
-            # Update elements with enrichment_metadata
-            for element in parsed_document.elements:
-                if element.page_number in page_metadata:
-                    # Update element with metadata
-                    if hasattr(element, 'model_copy'):
-                        updated_element = element.model_copy(
-                            update={"enrichment_metadata": page_metadata[element.page_number]}
-                        )
-                    else:
-                        # Fallback: create new element
-                        element_dict = element.model_dump() if hasattr(element, 'model_dump') else element.dict()
-                        element_dict["enrichment_metadata"] = page_metadata[element.page_number]
-                        updated_element = type(element)(**element_dict)
-                    updated_elements.append(updated_element)
-                else:
-                    updated_elements.append(element)
-        else:
-            # No elements or not page unit - keep as is
-            updated_elements = list(parsed_document.elements) if hasattr(parsed_document, 'elements') else []
+                page_meta = {"title": script_result.title, "script": script_result.script}
+                for el in parsed_document.elements:
+                    if el.page_number == page_number:
+                        item_metadata[el.element_id] = page_meta
         
-        # 4. Create updated ParsedDocument
-        try:
-            # Try to create with updated fields
-            if updated_content is not None:
-                updated_doc = parsed_document.model_copy(
-                    update={
-                        "content": updated_content,
-                        "elements": updated_elements,
-                    }
-                ) if hasattr(parsed_document, 'model_copy') else parsed_document
-            else:
-                # If content update failed, just update elements
-                if updated_elements:
-                    updated_doc = parsed_document.model_copy(
-                        update={"elements": updated_elements}
-                    ) if hasattr(parsed_document, 'model_copy') else parsed_document
-                else:
-                    updated_doc = parsed_document
-        except Exception:
-            # Fallback: return original document
-            updated_doc = parsed_document
-        
+        # Return enrichment data separately (linked, not attached to ParsedDocument)
         return {
-            "parsed_document": updated_doc,
+            "document_summary": document_summary,
+            "item_metadata": item_metadata,
             "chunk_unit": chunk_unit,
         }

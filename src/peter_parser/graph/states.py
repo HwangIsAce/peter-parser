@@ -18,8 +18,8 @@ class PipelineState(TypedDict):
     
     chunk_unit: NotRequired[Literal["page", "element"]] # PPTX는 page 단위로 처리, 나머지는 element 단위로 처리
     
-    document_summary: NotRequired[Optional[str]]  # use parsed_document.content.summary
-    item_metadata: NotRequired[Dict[int, Dict[str, Any]]]  # use parsed_document.elements[].enrichment_metadata
+    document_summary: NotRequired[Optional[str]]  # Linked to document (1:1). Not stored in ParsedDocument.
+    item_metadata: NotRequired[Dict[int, Dict[str, Any]]]  # Linked to elements; key = element_id. Not stored in ParsedDocument.
     
     # --------------- chunk stage ---------------
     chunk_boundaries: NotRequired[List[int]]

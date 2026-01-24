@@ -304,47 +304,49 @@ def test_pptx_enrichment():
         )
         
         print("\n[4] Checking results...")
-        assert "parsed_document" in result
+        assert "document_summary" in result
+        assert "item_metadata" in result
         assert "chunk_unit" in result
         assert result["chunk_unit"] == "page"
+        assert "parsed_document" not in result, "parsed_document should NOT be returned (original kept unchanged)"
         
-        updated_doc = result["parsed_document"]
-        
-        # Check document summary in parsed_document.content.summary
-        document_summary = ""
-        if hasattr(updated_doc, 'content'):
-            if isinstance(updated_doc.content, dict):
-                document_summary = updated_doc.content.get("summary", "")
-            elif hasattr(updated_doc.content, 'summary'):
-                document_summary = updated_doc.content.summary or ""
+        document_summary = result["document_summary"]
+        item_metadata = result["item_metadata"]
         
         print(f"✓ Document summary: {len(document_summary)} chars")
+        print(f"✓ Item metadata: {len(item_metadata)} items")
         
-        # Check item_metadata in parsed_document.elements[].enrichment_metadata
-        if hasattr(updated_doc, 'elements') and updated_doc.elements:
-            enriched_elements = [e for e in updated_doc.elements if e.enrichment_metadata]
-            print(f"✓ Enriched elements: {len(enriched_elements)}")
-            
-            if enriched_elements:
-                print("\n[5] Item Metadata Details:")
-                # Group by page_number
-                page_metadata = {}
-                for element in enriched_elements:
-                    if element.page_number not in page_metadata:
-                        page_metadata[element.page_number] = element.enrichment_metadata
-                
-                for page_num, metadata in sorted(page_metadata.items()):
-                    print(f"  Page {page_num}:")
-                    if metadata and metadata.get('title'):
-                        print(f"    - Title: {metadata['title']}")
-                    if metadata and metadata.get('script'):
-                        script_preview = metadata['script'][:100].replace('\n', ' ')
-                        print(f"    - Script: {script_preview}...")
-            else:
-                print("⚠ No enrichment_metadata in elements")
-                print("  (Images might not be processed - check _get_page_images)")
+        # Verify parsed_document is unchanged (no summary/metadata attached)
+        assert not hasattr(parsed_doc.content, 'summary') or parsed_doc.content.summary is None, \
+            "parsed_document.content.summary should NOT be set (original kept unchanged)"
+        
+        if hasattr(parsed_doc, 'elements') and parsed_doc.elements:
+            for element in parsed_doc.elements:
+                assert element.enrichment_metadata is None, \
+                    "parsed_document.elements[].enrichment_metadata should NOT be set (original kept unchanged)"
+        
+        # Check item_metadata structure (linked by element_id)
+        if item_metadata:
+            print("\n[5] Item Metadata Details (linked by element_id):")
+            seen = set()
+            for el in (parsed_doc.elements if hasattr(parsed_doc, "elements") and parsed_doc.elements else []):
+                if el.element_id not in item_metadata or el.element_id in seen:
+                    continue
+                seen.add(el.element_id)
+                metadata = item_metadata[el.element_id]
+                print(f"  Element {el.element_id} (page {el.page_number}):")
+                if metadata and metadata.get("title"):
+                    print(f"    - Title: {metadata['title']}")
+                if metadata and metadata.get("script"):
+                    script_preview = metadata["script"][:100].replace("\n", " ")
+                    print(f"    - Script: {script_preview}...")
+            # Verify linkage: every element on a page shares same metadata
+            if hasattr(parsed_doc, "elements") and parsed_doc.elements:
+                for el in parsed_doc.elements:
+                    assert el.element_id in item_metadata, f"element_id {el.element_id} must be in item_metadata"
         else:
-            print("⚠ No elements in parsed_document")
+            print("⚠ No item_metadata generated")
+            print("  (Ensure parsed_document has elements; images may affect _get_page_images)")
         
         print("\n" + "=" * 60)
         print("✓ PPTX enrichment test passed!")
@@ -387,32 +389,29 @@ def test_pptx_full_pipeline():
             parsed_document=parsed_doc,
             chunk_unit="page",
         )
-        enriched_doc = enrich_result["parsed_document"]
         
-        # Get summary from enriched_doc
-        document_summary = ""
-        if hasattr(enriched_doc, 'content'):
-            if isinstance(enriched_doc.content, dict):
-                document_summary = enriched_doc.content.get("summary", "")
-            elif hasattr(enriched_doc.content, 'summary'):
-                document_summary = enriched_doc.content.summary or ""
+        # Get enrichment data from result (linked, not from parsed_document)
+        document_summary = enrich_result.get("document_summary", "")
+        item_metadata = enrich_result.get("item_metadata", {})
+        
+        # Verify parsed_document is unchanged
+        assert "parsed_document" not in enrich_result, "parsed_document should NOT be returned"
         
         print(f"✓ Enrichment complete")
         print(f"  - Summary: {len(document_summary)} chars")
-        
-        # Count enriched elements
-        enriched_count = len([e for e in enriched_doc.elements if e.enrichment_metadata]) if hasattr(enriched_doc, 'elements') else 0
-        print(f"  - Enriched elements: {enriched_count}")
+        print(f"  - Item metadata: {len(item_metadata)} items")
         
         # Step 2: Chunking
         print("\n[4] Running chunking...")
         boundaries = chunker.detect_boundaries(
-            parsed_document=enriched_doc,
+            parsed_document=parsed_doc,  # Use original parsed_doc (unchanged)
+            document_summary=document_summary,
+            item_metadata=item_metadata,
         )
         print(f"✓ Boundaries detected: {boundaries}")
         
         chunks, updated_doc = chunker.chunk(
-            parsed_document=enriched_doc,
+            parsed_document=parsed_doc,  # Use original parsed_doc (unchanged)
             chunk_boundaries=boundaries,
             doc_title="Test PPTX Document",
         )

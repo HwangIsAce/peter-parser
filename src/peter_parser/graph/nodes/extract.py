@@ -15,22 +15,28 @@ def create_extract_node(
         enricher = DocumentEnricher()
     
     def extract_node(state: PipelineState) -> Dict[str, Any]:
-        """Extract node function for langgraph."""
+        """Extract node function for langgraph.
+        
+        Note: This does NOT modify parsed_document. Enrichment data is returned
+        separately and linked via keys (document_summary, item_metadata).
+        """
         parsed_doc = state.get("parsed_document")
         if not parsed_doc:
             raise ValueError("parsed_document is required")
         
         chunk_unit = state.get("chunk_unit")
         
-        # Delegate to enricher
+        # Delegate to enricher (does not modify parsed_document)
         result = enricher.enrich(
             parsed_document=parsed_doc,
             chunk_unit=chunk_unit,
         )
         
-        # Return updated parsed_document and chunk_unit
+        # Return enrichment data (linked, not attached to parsed_document)
+        # parsed_document remains unchanged in state
         return {
-            "parsed_document": result.get("parsed_document", parsed_doc),
+            "document_summary": result.get("document_summary"),
+            "item_metadata": result.get("item_metadata", {}),
             "chunk_unit": result.get("chunk_unit", chunk_unit),
         }
     

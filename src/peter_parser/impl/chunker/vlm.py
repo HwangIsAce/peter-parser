@@ -36,11 +36,15 @@ class VLMChunker:
     def detect_boundaries(
         self,
         parsed_document: ParsedDocument,
+        document_summary: str,
+        item_metadata: Dict[int, Dict[str, Any]],
     ) -> List[int]:
         """Detect chunk boundaries using LLM (page-based).
         
         Args:
-            parsed_document: Parsed document (with content.summary and elements[].enrichment_metadata)
+            parsed_document: Parsed document (used for structure info like page count)
+            document_summary: Document-level summary (linked to document)
+            item_metadata: Metadata dict with element_id as key (linked to elements)
         
         Returns:
             List of page indices where new chunks start (0-based)
@@ -50,29 +54,19 @@ class VLMChunker:
         if total_pages == 0:
             return []
         
-        # Get document summary from parsed_document.content.summary
-        document_summary = ""
-        if hasattr(parsed_document, 'content'):
-            if isinstance(parsed_document.content, dict):
-                document_summary = parsed_document.content.get("summary", "")
-            elif hasattr(parsed_document.content, 'summary'):
-                document_summary = parsed_document.content.summary or ""
-        
-        # Get item_metadata from elements (group by page_number)
-        item_metadata = {}
-        if hasattr(parsed_document, 'elements') and parsed_document.elements:
-            # Group elements by page_number and get enrichment_metadata
-            for element in parsed_document.elements:
-                page_idx = element.page_number - 1  # 0-based index
-                if element.enrichment_metadata:
-                    # Use first element's metadata for each page (all should be same for page unit)
-                    if page_idx not in item_metadata:
-                        item_metadata[page_idx] = element.enrichment_metadata
-        
-        # Format metadata for prompt
+        # Build page-level view for prompt: item_metadata is keyed by element_id.
+        # For each page_index, pick one element on that page and use its metadata.
         metadata_lines = []
-        for idx, meta in sorted(item_metadata.items()):
-            metadata_lines.append(f"  page {idx}: {meta}")
+        if hasattr(parsed_document, "elements") and parsed_document.elements:
+            for page_index in range(total_pages):
+                page_number = page_index + 1
+                meta = None
+                for el in parsed_document.elements:
+                    if el.page_number == page_number and el.element_id in item_metadata:
+                        meta = item_metadata[el.element_id]
+                        break
+                if meta is not None:
+                    metadata_lines.append(f"  page {page_index}: {meta}")
         metadata_str = "\n".join(metadata_lines) if metadata_lines else "No metadata"
         
         instruction = BOUNDARY_DETECTION_USER_PROMPT.format(
