@@ -182,20 +182,30 @@ def test_vlm_chunker_chunk_logic():
     
     # Test chunking with boundaries
     boundaries = [2]  # Chunk starts at page 2 (0-based, so page 3)
-    chunks = chunker.chunk(parsed_doc, boundaries)
+    chunks = chunker.chunk(parsed_doc, boundaries, doc_title="Test Presentation")
     
     assert len(chunks) == 2  # Two chunks: [0-1] and [2-3]
-    assert chunks[0]["chunk_index"] == 0
-    assert chunks[0]["start_index"] == 0
-    assert chunks[0]["end_index"] == 1
-    assert chunks[1]["chunk_index"] == 1
-    assert chunks[1]["start_index"] == 2
-    assert chunks[1]["end_index"] == 3
+    
+    # Chunk 0 assertions
+    assert chunks[0].chunk_order == 0
+    assert chunks[0].metadata.start_index == 0
+    assert chunks[0].metadata.end_index == 1
+    assert chunks[0].metadata.page_number == 1  # First page number
+    assert chunks[0].doc_title == "Test Presentation"
+    assert chunks[0].chunk is not None
+    assert chunks[0].uuid is not None
+    
+    # Chunk 1 assertions
+    assert chunks[1].chunk_order == 1
+    assert chunks[1].metadata.start_index == 2
+    assert chunks[1].metadata.end_index == 3
+    assert chunks[1].metadata.page_number == 3  # First page number
+    assert chunks[1].metadata.extra["page_indices"] == [2, 3]
+    assert chunks[1].metadata.extra["page_numbers"] == [3, 4]
     
     print(f"✓ Created {len(chunks)} chunks correctly")
-    print(f"  Chunk 0: pages {chunks[0]['indices']}")
-    print(f"  Chunk 1: pages {chunks[1]['indices']}")
-
+    print(f"  Chunk 0: pages {chunks[0].metadata.extra['page_numbers']}")
+    print(f"  Chunk 1: pages {chunks[1].metadata.extra['page_numbers']}")
 
 def test_pptx_mock_data_creation():
     """Test PPTX mock data creation (no API calls)."""
@@ -300,7 +310,6 @@ def test_pptx_enrichment():
         import traceback
         traceback.print_exc()
 
-
 def test_pptx_full_pipeline():
     """Test full pipeline with PPTX-style mock data (real API calls)."""
     print("\n" + "=" * 60)
@@ -349,17 +358,19 @@ def test_pptx_full_pipeline():
         chunks = chunker.chunk(
             parsed_document=parsed_doc,
             chunk_boundaries=boundaries,
+            doc_title="Test PPTX Document",
         )
         print(f"✓ Chunks created: {len(chunks)}")
         
         # Print results
         print("\n[5] Results:")
         for chunk in chunks:
-            print(f"  Chunk {chunk['chunk_index']}:")
-            print(f"    - Pages: {chunk['indices']}")
-            print(f"    - Text: {len(chunk['text'])} chars")
-            if chunk['text']:
-                preview = chunk['text'][:80].replace('\n', ' ')
+            print(f"  Chunk {chunk.chunk_order}:")
+            print(f"    - UUID: {chunk.uuid}")
+            print(f"    - Pages: {chunk.metadata.extra.get('page_numbers', [])}")
+            print(f"    - Text: {len(chunk.chunk)} chars")
+            if chunk.chunk:
+                preview = chunk.chunk[:80].replace('\n', ' ')
                 print(f"    - Preview: {preview}...")
         
         print("\n" + "=" * 60)

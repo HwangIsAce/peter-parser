@@ -1,8 +1,10 @@
 """VLM-based chunker implementation (production)."""
+import uuid
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from peter_parser_core import ParsedDocument
+from peter_parser_core.common.types import Chunk, ChunkMetadata
 from peter_parser.common.config import Config
 from peter_parser.impl.extractor.structured import StructuredLLM
 from peter_parser.prompts.chunking import (
@@ -80,20 +82,26 @@ class VLMChunker:
         self,
         parsed_document: ParsedDocument,
         chunk_boundaries: List[int],
-    ) -> List[Dict[str, Any]]:
+        doc_title: Optional[str] = None,
+    ) -> List[Chunk]:
         """Create chunks from parsed document (page-based).
         
         Args:
             parsed_document: Parsed document
             chunk_boundaries: List of page indices where new chunks start
+            doc_title: Document title (optional, defaults to empty string)
         
         Returns:
-            List of chunk dictionaries
+            List of Chunk objects conforming to peter-parser-core schema
         """
         pages = parsed_document.pages
         
         if not pages:
             return []
+        
+        # Get document title
+        if doc_title is None:
+            doc_title = getattr(parsed_document, 'title', '') or ''
         
         # Create boundaries list (0 + boundaries + end)
         all_boundaries = [0] + sorted(chunk_boundaries) + [len(pages)]
@@ -106,14 +114,32 @@ class VLMChunker:
             # Extract pages for this chunk
             chunk_pages = pages[start_idx:end_idx]
             chunk_text = "\n\n".join([page.text for page in chunk_pages])
-            chunk_indices = [page.page_number - 1 for page in chunk_pages]  # 0-based
             
-            chunks.append({
-                "text": chunk_text,
-                "start_index": start_idx,
-                "end_index": end_idx - 1,
-                "indices": chunk_indices,
-                "chunk_index": i,
-            })
+            # Get first page number (1-based)
+            first_page_number = chunk_pages[0].page_number if chunk_pages else None
+            chunk_size = len(chunk_text)
+            
+            # Create ChunkMetadata
+            metadata = ChunkMetadata(
+                page_number=first_page_number,
+                chunk_size=chunk_size,
+                start_index=start_idx,
+                end_index=end_idx - 1,
+                extra={
+                    "page_indices": [page.page_number - 1 for page in chunk_pages],  # 0-based indices
+                    "page_numbers": [page.page_number for page in chunk_pages],  # 1-based page numbers
+                }
+            )
+            
+            # Create Chunk object
+            chunk_obj = Chunk(
+                uuid=str(uuid.uuid4()),
+                doc_title=doc_title,
+                chunk=chunk_text,
+                chunk_order=i,
+                metadata=metadata,
+            )
+            
+            chunks.append(chunk_obj)
         
         return chunks

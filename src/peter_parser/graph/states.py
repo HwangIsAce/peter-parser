@@ -4,6 +4,7 @@ from typing_extensions import NotRequired
 from typing import TypedDict, Optional, Union, Literal, Dict, Any, List
 
 from peter_parser_core import ParsedDocument
+from peter_parser_core.common.types import Chunk
 
 class PipelineState(TypedDict):
     """Pipeline execution state"""
@@ -24,7 +25,7 @@ class PipelineState(TypedDict):
     # --------------- chunk stage ---------------
     chunk_boundaries: NotRequired[List[int]]
     
-    chunks: NotRequired[List[Dict[str, Any]]]
+    chunks: NotRequired[List[Chunk]]  # Changed from List[Dict[str, Any]]
     
     # --------------- chunk enrichment stage ---------------
 

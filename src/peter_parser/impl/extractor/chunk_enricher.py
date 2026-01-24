@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from peter_parser.impl.extractor.structured import StructuredLLM
 from peter_parser.common.config import Config
+from peter_parser_core.common.types import Chunk
 
 class ChunkMetadata(BaseModel):
     """Chunk metadata model."""
@@ -27,21 +28,21 @@ class ChunkEnricher:
     
     def enrich_chunks(
         self,
-        chunks: List[Dict[str, Any]],
+        chunks: List[Chunk],
     ) -> Dict[int, Dict[str, Any]]:
         """Enrich chunks with metadata.
         
         Args:
-            chunks: List of chunk dictionaries
+            chunks: List of Chunk objects
         
         Returns:
-            Dict mapping chunk_index to metadata
+            Dict mapping chunk_order to metadata
         """
         chunk_metadata = {}
         
         for chunk in chunks:
-            chunk_idx = chunk.get("chunk_index")
-            chunk_text = chunk.get("text", "")
+            chunk_idx = chunk.chunk_order
+            chunk_text = chunk.chunk
             
             # Extract metadata for each chunk
             result = self.llm.structure_output(
@@ -49,6 +50,12 @@ class ChunkEnricher:
                 key_attr="name",
                 value_attr="description"
             )
+            
+            # Update chunk's metadata.extra with enrichment results
+            chunk.metadata.extra["enrichment"] = {
+                "summary": result.summary,
+                "keywords": result.keywords,
+            }
             
             chunk_metadata[chunk_idx] = {
                 "summary": result.summary,
