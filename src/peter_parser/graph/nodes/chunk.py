@@ -22,29 +22,25 @@ def create_chunk_node(
         if not parsed_document:
             raise ValueError("parsed_document is required")
         
-        document_summary = state.get("document_summary", "")
-        item_metadata = state.get("item_metadata", {})
-        
         # Initialize chunker if needed
         if chunker is None:
             current_chunker = VLMChunker()
         else:
             current_chunker = chunker
         
-        # Detect boundaries
+        # Detect boundaries (reads from parsed_document.content.summary and elements)
         boundaries = current_chunker.detect_boundaries(
             parsed_document=parsed_document,
-            document_summary=document_summary,
-            item_metadata=item_metadata,
         )
         
-        # Create chunks
-        chunks = current_chunker.chunk(
+        # Create chunks (returns chunks and updated parsed_document)
+        chunks, updated_parsed_document = current_chunker.chunk(
             parsed_document=parsed_document,
             chunk_boundaries=boundaries,
         )
         
         return {
+            "parsed_document": updated_parsed_document,
             "chunk_boundaries": boundaries,
             "chunks": chunks,
         }

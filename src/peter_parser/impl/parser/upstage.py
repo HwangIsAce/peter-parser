@@ -1,11 +1,12 @@
 """Upstage parser implementation (production)."""
 import requests
 import re
-from typing import Union
+from typing import Union, Optional, List, Dict, Any
 from io import BytesIO
+from pydantic import BaseModel, Field
 
 from peter_parser_core import BaseParser, ParsedDocument
-from peter_parser_core.common.types import Page, Table, TableCell, Image
+from peter_parser_core.common.types import Page, Table, TableCell, Image, Element, ContentModel
 
 
 class UpstageParser(BaseParser):
@@ -103,6 +104,24 @@ class UpstageParser(BaseParser):
             base64=element.get("base64") or element.get("data"),
         )
     
+    def _parse_element(self, element: dict) -> Element:
+        """Parse element from API response to Element object."""
+        element_id = element.get("id", 0)
+        page_number = element.get("page_number") or element.get("page", 1)
+        category = element.get("category") or element.get("type", "paragraph")
+        text = self._extract_text_from_element(element)
+        coordinates = element.get("coordinates")
+        
+        return Element(
+            element_id=element_id,
+            page_number=page_number,
+            category=category,
+            text=text,
+            coordinates=coordinates,
+            enrichment_metadata=None,  # Will be set during enrichment
+            chunk_uuid=None,  # Will be set during chunking
+        )
+    
     def _convert_page(self, page_data: dict) -> Page:
         """Convert page data to Page object"""
         tables = [
@@ -198,11 +217,30 @@ class UpstageParser(BaseParser):
     def _convert_response(self, api_response: dict) -> ParsedDocument:
         """Convert Upstage API JSON response to ParsedDocument."""
         # Upstage API v2.0: {"api": "2.0", "content": {"html": "..."}, "elements": [...]}
-        elements = api_response.get("elements", [])
+        elements_raw = api_response.get("elements", [])
         
-        if elements:
+        if elements_raw:
+            # Parse elements
+            elements = [
+                self._parse_element(elem)
+                for elem in elements_raw
+                if isinstance(elem, dict)
+            ]
             
-            pages = self._build_pages_from_elements(elements)
+            # Build pages from elements (기존 로직 유지)
+            pages = self._build_pages_from_elements(elements_raw)
+            
+            # Extract content
+            content_data = api_response.get("content", {})
+            if isinstance(content_data, dict):
+                content = ContentModel(
+                    html=content_data.get("html"),
+                    markdown=content_data.get("markdown"),
+                    text=content_data.get("text"),
+                    summary=None,  # Will be set during enrichment
+                )
+            else:
+                content = ContentModel()
             
             metadata = {
                 "api_version": api_response.get("api", "2.0"),
@@ -211,14 +249,42 @@ class UpstageParser(BaseParser):
                 "usage": api_response.get("usage", {}),
             }
             
-            return ParsedDocument(pages=pages, metadata=metadata)
+            # Try to create ParsedDocument with new fields
+            try:
+                return ParsedDocument(
+                    pages=pages,
+                    elements=elements,
+                    content=content,
+                    metadata=metadata
+                )
+            except TypeError:
+                # Fallback: if ParsedDocument doesn't support new fields yet
+                return ParsedDocument(pages=pages, metadata=metadata)
         
         pages_data = api_response.get("pages", [])
         if pages_data:
             pages = [self._convert_page(page) for page in pages_data if isinstance(page, dict)]
-            return ParsedDocument(pages=pages, metadata=api_response.get("metadata", {}))
+            # Try with new fields, fallback if not supported
+            try:
+                return ParsedDocument(
+                    pages=pages,
+                    elements=[],
+                    content=ContentModel(),
+                    metadata=api_response.get("metadata", {})
+                )
+            except TypeError:
+                return ParsedDocument(pages=pages, metadata=api_response.get("metadata", {}))
         
-        return ParsedDocument(pages=[], metadata=api_response)
+        # Empty document
+        try:
+            return ParsedDocument(
+                pages=[],
+                elements=[],
+                content=ContentModel(),
+                metadata=api_response
+            )
+        except TypeError:
+            return ParsedDocument(pages=[], metadata=api_response)
 
     def parse(
         self,

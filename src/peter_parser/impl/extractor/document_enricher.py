@@ -98,13 +98,28 @@ class DocumentEnricher:
             chunk_unit: Chunking unit ("page" or "element")
         
         Returns:
-            Dict with document_summary, item_metadata, chunk_unit
+            Dict with parsed_document (updated), chunk_unit
         """
         chunk_unit = chunk_unit or Config.DEFAULT_CHUNK_UNIT
         
         # 1. Document summary (LLM)
-        document_content = parsed_document.content or ""
-        content = document_content[:Config.CHUNK_MAX_CONTENT_LENGTH]
+        # Get content text (from property or content field)
+        document_content = ""
+        if hasattr(parsed_document, 'content'):
+            if isinstance(parsed_document.content, dict):
+                document_content = parsed_document.content.get("text", "")
+            elif hasattr(parsed_document.content, 'text'):
+                document_content = parsed_document.content.text or ""
+        
+        # Fallback to property if content field doesn't have text
+        if not document_content:
+            content_prop = getattr(parsed_document, 'content', None)
+            if callable(content_prop):
+                document_content = content_prop() or ""
+            elif isinstance(content_prop, str):
+                document_content = content_prop
+        
+        content = document_content[:Config.CHUNK_MAX_CONTENT_LENGTH] if document_content else ""
         
         summary_result = self.llm.structure_output(
             instruction=DOCUMENT_SUMMARY_PROMPT.format(document_content=content),
@@ -113,12 +128,27 @@ class DocumentEnricher:
         )
         document_summary = summary_result.summary
         
-        # 2. Page metadata (VLM per page if images available, else LLM)
-        item_metadata = {}
+        # 2. Update ParsedDocument with summary
+        # Try to update content.summary
+        updated_content = None
+        if hasattr(parsed_document, 'content'):
+            if isinstance(parsed_document.content, dict):
+                updated_content = {**parsed_document.content, "summary": document_summary}
+            elif hasattr(parsed_document.content, 'model_copy'):
+                # Pydantic model
+                updated_content = parsed_document.content.model_copy(update={"summary": document_summary})
+            elif hasattr(parsed_document.content, 'copy'):
+                # Regular object with copy
+                updated_content = parsed_document.content.copy()
+                updated_content.summary = document_summary
         
-        if chunk_unit == "page":
+        # 3. Page metadata (VLM per page if images available, else LLM)
+        updated_elements = []
+        if chunk_unit == "page" and hasattr(parsed_document, 'elements') and parsed_document.elements:
+            # Group elements by page_number
+            page_metadata = {}
+            
             for page in parsed_document.pages:
-                page_idx = page.page_number - 1
                 page_number = page.page_number
                 
                 # Try to get page images
@@ -140,13 +170,55 @@ class DocumentEnricher:
                         value_attr="description"
                     )
                 
-                item_metadata[page_idx] = {
+                # Store metadata for this page
+                page_metadata[page_number] = {
                     "title": script_result.title,
                     "script": script_result.script
                 }
+            
+            # Update elements with enrichment_metadata
+            for element in parsed_document.elements:
+                if element.page_number in page_metadata:
+                    # Update element with metadata
+                    if hasattr(element, 'model_copy'):
+                        updated_element = element.model_copy(
+                            update={"enrichment_metadata": page_metadata[element.page_number]}
+                        )
+                    else:
+                        # Fallback: create new element
+                        element_dict = element.model_dump() if hasattr(element, 'model_dump') else element.dict()
+                        element_dict["enrichment_metadata"] = page_metadata[element.page_number]
+                        updated_element = type(element)(**element_dict)
+                    updated_elements.append(updated_element)
+                else:
+                    updated_elements.append(element)
+        else:
+            # No elements or not page unit - keep as is
+            updated_elements = list(parsed_document.elements) if hasattr(parsed_document, 'elements') else []
+        
+        # 4. Create updated ParsedDocument
+        try:
+            # Try to create with updated fields
+            if updated_content is not None:
+                updated_doc = parsed_document.model_copy(
+                    update={
+                        "content": updated_content,
+                        "elements": updated_elements,
+                    }
+                ) if hasattr(parsed_document, 'model_copy') else parsed_document
+            else:
+                # If content update failed, just update elements
+                if updated_elements:
+                    updated_doc = parsed_document.model_copy(
+                        update={"elements": updated_elements}
+                    ) if hasattr(parsed_document, 'model_copy') else parsed_document
+                else:
+                    updated_doc = parsed_document
+        except Exception:
+            # Fallback: return original document
+            updated_doc = parsed_document
         
         return {
-            "document_summary": document_summary,
-            "item_metadata": item_metadata,
+            "parsed_document": updated_doc,
             "chunk_unit": chunk_unit,
         }

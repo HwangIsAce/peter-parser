@@ -18,15 +18,10 @@ class PipelineState(TypedDict):
     
     chunk_unit: NotRequired[Literal["page", "element"]] # PPTX는 page 단위로 처리, 나머지는 element 단위로 처리
     
-    document_summary: NotRequired[Optional[str]] # 문서 요약
-    
-    item_metadata: NotRequired[Dict[int, Dict[str, Any]]]
+    document_summary: NotRequired[Optional[str]]  # use parsed_document.content.summary
+    item_metadata: NotRequired[Dict[int, Dict[str, Any]]]  # use parsed_document.elements[].enrichment_metadata
     
     # --------------- chunk stage ---------------
     chunk_boundaries: NotRequired[List[int]]
     
     chunks: NotRequired[List[Chunk]]  # Changed from List[Dict[str, Any]]
-    
-    # --------------- chunk enrichment stage ---------------
-
-    chunk_metadata: NotRequired[Dict[int, Dict[str, Any]]]

@@ -28,7 +28,11 @@ def create_extract_node(
             chunk_unit=chunk_unit,
         )
         
-        return result
+        # Return updated parsed_document and chunk_unit
+        return {
+            "parsed_document": result.get("parsed_document", parsed_doc),
+            "chunk_unit": result.get("chunk_unit", chunk_unit),
+        }
     
     return extract_node
 
@@ -41,15 +45,21 @@ def create_chunk_enrich_node(
         enricher = ChunkEnricher()
     
     def chunk_enrich_node(state: PipelineState) -> Dict[str, Any]:
-        """Chunk enrichment node function."""
+        """Chunk enrichment node function.
+        
+        Enriches chunks in-place by updating chunk.metadata.extra["enrichment"].
+        No separate return value needed as metadata is stored in chunks directly.
+        """
         chunks = state.get("chunks", [])
         if not chunks:
             return {}
         
-        chunk_metadata = enricher.enrich_chunks(chunks)
+        # Enrich chunks (updates chunk.metadata.extra["enrichment"] in-place)
+        enricher.enrich_chunks(chunks)
         
+        # Return updated chunks (though they're modified in-place)
         return {
-            "chunk_metadata": chunk_metadata,
+            "chunks": chunks,
         }
     
     return chunk_enrich_node

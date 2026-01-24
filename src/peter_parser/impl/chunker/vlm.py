@@ -36,15 +36,11 @@ class VLMChunker:
     def detect_boundaries(
         self,
         parsed_document: ParsedDocument,
-        document_summary: str,
-        item_metadata: Dict[int, Dict[str, Any]],
     ) -> List[int]:
         """Detect chunk boundaries using LLM (page-based).
         
         Args:
-            parsed_document: Parsed document
-            document_summary: Document summary
-            item_metadata: Metadata per page
+            parsed_document: Parsed document (with content.summary and elements[].enrichment_metadata)
         
         Returns:
             List of page indices where new chunks start (0-based)
@@ -54,7 +50,26 @@ class VLMChunker:
         if total_pages == 0:
             return []
         
-        # Format metadata
+        # Get document summary from parsed_document.content.summary
+        document_summary = ""
+        if hasattr(parsed_document, 'content'):
+            if isinstance(parsed_document.content, dict):
+                document_summary = parsed_document.content.get("summary", "")
+            elif hasattr(parsed_document.content, 'summary'):
+                document_summary = parsed_document.content.summary or ""
+        
+        # Get item_metadata from elements (group by page_number)
+        item_metadata = {}
+        if hasattr(parsed_document, 'elements') and parsed_document.elements:
+            # Group elements by page_number and get enrichment_metadata
+            for element in parsed_document.elements:
+                page_idx = element.page_number - 1  # 0-based index
+                if element.enrichment_metadata:
+                    # Use first element's metadata for each page (all should be same for page unit)
+                    if page_idx not in item_metadata:
+                        item_metadata[page_idx] = element.enrichment_metadata
+        
+        # Format metadata for prompt
         metadata_lines = []
         for idx, meta in sorted(item_metadata.items()):
             metadata_lines.append(f"  page {idx}: {meta}")
@@ -83,7 +98,7 @@ class VLMChunker:
         parsed_document: ParsedDocument,
         chunk_boundaries: List[int],
         doc_title: Optional[str] = None,
-    ) -> List[Chunk]:
+    ) -> tuple[List[Chunk], ParsedDocument]:
         """Create chunks from parsed document (page-based).
         
         Args:
@@ -92,12 +107,12 @@ class VLMChunker:
             doc_title: Document title (optional, defaults to empty string)
         
         Returns:
-            List of Chunk objects conforming to peter-parser-core schema
+            Tuple of (List[Chunk], updated ParsedDocument with element.chunk_uuid set)
         """
         pages = parsed_document.pages
         
         if not pages:
-            return []
+            return [], parsed_document
         
         # Get document title
         if doc_title is None:
@@ -107,6 +122,8 @@ class VLMChunker:
         all_boundaries = [0] + sorted(chunk_boundaries) + [len(pages)]
         
         chunks = []
+        element_chunk_map = {}  # element_id -> chunk_uuid mapping
+        
         for i in range(len(all_boundaries) - 1):
             start_idx = all_boundaries[i]
             end_idx = all_boundaries[i + 1]
@@ -141,5 +158,37 @@ class VLMChunker:
             )
             
             chunks.append(chunk_obj)
+            
+            # Map elements to chunk_uuid
+            chunk_page_numbers = [page.page_number for page in chunk_pages]
+            if hasattr(parsed_document, 'elements') and parsed_document.elements:
+                for element in parsed_document.elements:
+                    if element.page_number in chunk_page_numbers:
+                        element_chunk_map[element.element_id] = chunk_obj.uuid
         
-        return chunks
+        # Update parsed_document with element.chunk_uuid
+        updated_document = parsed_document
+        if element_chunk_map and hasattr(parsed_document, 'elements') and parsed_document.elements:
+            updated_elements = []
+            for element in parsed_document.elements:
+                if element.element_id in element_chunk_map:
+                    if hasattr(element, 'model_copy'):
+                        updated_element = element.model_copy(
+                            update={"chunk_uuid": element_chunk_map[element.element_id]}
+                        )
+                    else:
+                        # Fallback
+                        element_dict = element.model_dump() if hasattr(element, 'model_dump') else element.dict()
+                        element_dict["chunk_uuid"] = element_chunk_map[element.element_id]
+                        updated_element = type(element)(**element_dict)
+                    updated_elements.append(updated_element)
+                else:
+                    updated_elements.append(element)
+            
+            # Update parsed_document
+            if hasattr(parsed_document, 'model_copy'):
+                updated_document = parsed_document.model_copy(update={"elements": updated_elements})
+            else:
+                updated_document = parsed_document
+        
+        return chunks, updated_document

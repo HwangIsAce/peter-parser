@@ -11,7 +11,7 @@ from peter_parser.impl.extractor.document_enricher import DocumentEnricher
 from peter_parser.impl.chunker.vlm import VLMChunker
 from peter_parser.impl.extractor.chunk_enricher import ChunkEnricher
 from peter_parser_core import ParsedDocument
-from peter_parser_core.common.types import Page, Image
+from peter_parser_core.common.types import Page, Image, Element, ContentModel
 
 
 def create_mock_pptx_parsed_document() -> ParsedDocument:
@@ -102,26 +102,49 @@ def create_mock_pptx_parsed_document() -> ParsedDocument:
     for page in pages:
         all_images.extend(page.images)
     
-    content = "\n\n".join([page.text for page in pages])
+    # Create elements from pages (mock element data)
+    elements = []
+    element_id = 0
+    for page in pages:
+        # Create a simple element for each page
+        elements.append(Element(
+            element_id=element_id,
+            page_number=page.page_number,
+            category="paragraph",  # Mock category
+            text=page.text,
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ))
+        element_id += 1
     
-    # ParsedDocument 생성
+    # Create content
+    content_text = "\n\n".join([page.text for page in pages])
+    content = ContentModel(
+        html=None,
+        markdown=None,
+        text=content_text,
+        summary=None,
+    )
+    
+    # ParsedDocument 생성 (try with new fields)
     try:
-        # images 파라미터가 있으면 사용
         parsed_doc = ParsedDocument(
             pages=pages,
+            elements=elements,
             content=content,
-            tables=[],
-            images=all_images,
             metadata={}
         )
     except TypeError:
-        # images 파라미터가 없으면 제외
-        parsed_doc = ParsedDocument(
-            pages=pages,
-            content=content,
-            tables=[],
-            metadata={}
-        )
+        # Fallback: try without new fields
+        try:
+            parsed_doc = ParsedDocument(
+                pages=pages,
+                metadata={}
+            )
+        except TypeError:
+            # Last fallback
+            parsed_doc = ParsedDocument(pages=pages)
     
     return parsed_doc
 
@@ -182,7 +205,7 @@ def test_vlm_chunker_chunk_logic():
     
     # Test chunking with boundaries
     boundaries = [2]  # Chunk starts at page 2 (0-based, so page 3)
-    chunks = chunker.chunk(parsed_doc, boundaries, doc_title="Test Presentation")
+    chunks, updated_doc = chunker.chunk(parsed_doc, boundaries, doc_title="Test Presentation")
     
     assert len(chunks) == 2  # Two chunks: [0-1] and [2-3]
     
@@ -241,7 +264,9 @@ def test_pptx_mock_data_creation():
     print(f"  - Images in pages: {total_page_images}")
     if hasattr(parsed_doc, 'images') and parsed_doc.images:
         print(f"  - Images in ParsedDocument: {len(parsed_doc.images)}")
-    print(f"  - Content length: {len(parsed_doc.content)} chars")
+    # Get content text length
+    content_text = parsed_doc.content.text if parsed_doc.content and parsed_doc.content.text else parsed_doc.content_text
+    print(f"  - Content length: {len(content_text)} chars")
 
 
 def test_pptx_enrichment():
@@ -279,27 +304,47 @@ def test_pptx_enrichment():
         )
         
         print("\n[4] Checking results...")
-        assert "document_summary" in result
-        assert "item_metadata" in result
+        assert "parsed_document" in result
         assert "chunk_unit" in result
         assert result["chunk_unit"] == "page"
         
-        print(f"✓ Document summary: {len(result['document_summary'])} chars")
-        print(f"✓ Item metadata: {len(result['item_metadata'])} items")
+        updated_doc = result["parsed_document"]
         
-        # Check item_metadata
-        if result['item_metadata']:
-            print("\n[5] Item Metadata Details:")
-            for page_idx, metadata in sorted(result['item_metadata'].items()):
-                print(f"  Page {page_idx}:")
-                if metadata.get('title'):
-                    print(f"    - Title: {metadata['title']}")
-                if metadata.get('script'):
-                    script_preview = metadata['script'][:100].replace('\n', ' ')
-                    print(f"    - Script: {script_preview}...")
+        # Check document summary in parsed_document.content.summary
+        document_summary = ""
+        if hasattr(updated_doc, 'content'):
+            if isinstance(updated_doc.content, dict):
+                document_summary = updated_doc.content.get("summary", "")
+            elif hasattr(updated_doc.content, 'summary'):
+                document_summary = updated_doc.content.summary or ""
+        
+        print(f"✓ Document summary: {len(document_summary)} chars")
+        
+        # Check item_metadata in parsed_document.elements[].enrichment_metadata
+        if hasattr(updated_doc, 'elements') and updated_doc.elements:
+            enriched_elements = [e for e in updated_doc.elements if e.enrichment_metadata]
+            print(f"✓ Enriched elements: {len(enriched_elements)}")
+            
+            if enriched_elements:
+                print("\n[5] Item Metadata Details:")
+                # Group by page_number
+                page_metadata = {}
+                for element in enriched_elements:
+                    if element.page_number not in page_metadata:
+                        page_metadata[element.page_number] = element.enrichment_metadata
+                
+                for page_num, metadata in sorted(page_metadata.items()):
+                    print(f"  Page {page_num}:")
+                    if metadata and metadata.get('title'):
+                        print(f"    - Title: {metadata['title']}")
+                    if metadata and metadata.get('script'):
+                        script_preview = metadata['script'][:100].replace('\n', ' ')
+                        print(f"    - Script: {script_preview}...")
+            else:
+                print("⚠ No enrichment_metadata in elements")
+                print("  (Images might not be processed - check _get_page_images)")
         else:
-            print("⚠ No item_metadata generated")
-            print("  (Images might not be processed - check _get_page_images)")
+            print("⚠ No elements in parsed_document")
         
         print("\n" + "=" * 60)
         print("✓ PPTX enrichment test passed!")
@@ -342,21 +387,32 @@ def test_pptx_full_pipeline():
             parsed_document=parsed_doc,
             chunk_unit="page",
         )
+        enriched_doc = enrich_result["parsed_document"]
+        
+        # Get summary from enriched_doc
+        document_summary = ""
+        if hasattr(enriched_doc, 'content'):
+            if isinstance(enriched_doc.content, dict):
+                document_summary = enriched_doc.content.get("summary", "")
+            elif hasattr(enriched_doc.content, 'summary'):
+                document_summary = enriched_doc.content.summary or ""
+        
         print(f"✓ Enrichment complete")
-        print(f"  - Summary: {len(enrich_result['document_summary'])} chars")
-        print(f"  - Metadata: {len(enrich_result['item_metadata'])} items")
+        print(f"  - Summary: {len(document_summary)} chars")
+        
+        # Count enriched elements
+        enriched_count = len([e for e in enriched_doc.elements if e.enrichment_metadata]) if hasattr(enriched_doc, 'elements') else 0
+        print(f"  - Enriched elements: {enriched_count}")
         
         # Step 2: Chunking
         print("\n[4] Running chunking...")
         boundaries = chunker.detect_boundaries(
-            parsed_document=parsed_doc,
-            document_summary=enrich_result['document_summary'],
-            item_metadata=enrich_result['item_metadata'],
+            parsed_document=enriched_doc,
         )
         print(f"✓ Boundaries detected: {boundaries}")
         
-        chunks = chunker.chunk(
-            parsed_document=parsed_doc,
+        chunks, updated_doc = chunker.chunk(
+            parsed_document=enriched_doc,
             chunk_boundaries=boundaries,
             doc_title="Test PPTX Document",
         )
