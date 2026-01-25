@@ -31,9 +31,12 @@ class Config:
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_VISION_MODEL: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")  # Vision용
     
-    # Chunking Configuration
+    # VLM-basedChunking Configuration
     DEFAULT_CHUNK_UNIT: str = os.getenv("DEFAULT_CHUNK_UNIT", "element")  # "page" or "element"
     CHUNK_MAX_CONTENT_LENGTH: int = int(os.getenv("CHUNK_MAX_CONTENT_LENGTH", "10000"))  # For document summary
+    
+    # Lumber-based Chunking Configuration
+    LUMBER_LANGUAGE_DEFAULT: str = os.getenv("LUMBER_LANGUAGE_DEFAULT", "ko")
     
     # Schema Descriptions for LLM structured output
     SCHEMA_DESCRIPTIONS = {

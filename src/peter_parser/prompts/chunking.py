@@ -1,3 +1,7 @@
+# ------------------------------------------------------------
+# VLM-based Chunking Prompts
+# ------------------------------------------------------------
+
 """Prompts for chunk boundary detection."""
 
 BOUNDARY_DETECTION_SYSTEM_PROMPT = """You are an expert in document analysis. Your task is to identify optimal chunk boundaries based on semantic coherence.
@@ -27,3 +31,23 @@ Total number of {chunk_unit}s: {total_items}
 The first chunk always starts at index 0, so do not include 0 in the list.
 Consider semantic coherence and topic changes when determining boundaries.
 Return only the boundary indices as a list of integers."""
+
+# -----------------------------------------------------------------------------
+# LumberChunker
+# -----------------------------------------------------------------------------
+
+LUMBER_SYSTEM_PROMPT = """You are an expert in document structure. You receive a document section between two heading1 boundaries.
+
+Task: Identify optimal chunk boundaries for hierarchical chunking within the section. Consider sub-topics, paragraph breaks, and semantic coherence.
+
+Output: Return a list of segment indices (0-based) where new chunks start. Do not include 0."""
+
+LUMBER_SECTION_PROMPT = """<SECTION_HEADING>
+{section_heading}
+</SECTION_HEADING>
+
+<SECTION_CONTENT>
+{document}
+</SECTION_CONTENT>
+
+This is a section between two heading1 boundaries. Analyze it and identify optimal chunk boundaries for hierarchical chunking. Return a list of segment indices where new chunks start. Do not include 0."""
