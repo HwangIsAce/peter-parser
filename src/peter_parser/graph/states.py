@@ -26,3 +26,6 @@ class PipelineState(TypedDict):
     
     chunks: NotRequired[List[Chunk]]  # Changed from List[Dict[str, Any]]
     chunk_metadata: NotRequired[Dict[int, Dict[str, Any]]]  # Linked to chunks; key = chunk_order. Not stored in Chunk.
+
+    # --------------- export stage ---------------
+    export_json: NotRequired[Optional[str]]  # JSON-serialized chunks for export

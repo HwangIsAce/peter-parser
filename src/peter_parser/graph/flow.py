@@ -11,6 +11,7 @@ from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
 from peter_parser.graph.nodes.extract import create_extract_node, create_chunk_enrich_node
 from peter_parser.graph.nodes.chunk import create_chunk_node
+from peter_parser.graph.nodes.export import create_export_node
 
 def _route_after_parse(state: PipelineState) -> str:
     """Lumber(element) 사용 시 enrich 스킵."""
@@ -49,11 +50,13 @@ class PipelineFlow:
         graph.add_node("enrich", create_extract_node())
         graph.add_node("chunk", create_chunk_node())
         graph.add_node("chunk_enrich", create_chunk_enrich_node())
+        graph.add_node("export", create_export_node())
         
         graph.set_entry_point("parse")
         graph.add_conditional_edges("parse", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
         graph.add_edge("enrich", "chunk")
         graph.add_edge("chunk", "chunk_enrich")
+        graph.add_edge("chunk_enrich", "export")
         
         return graph.compile()
     

@@ -458,6 +458,13 @@ def test_pipeline_integration():
         # Verify parsed_document was created by parser (not minimal)
         assert "parsed_document" in state
         assert state["parsed_document"].metadata.get("source") == "mock_pdf"
+
+        # Verify export_json (Export node)
+        assert "export_json" in state
+        import json
+        exported = json.loads(state["export_json"])
+        assert len(exported) == 3
+        assert exported[0]["metadata"]["extra"]["lifelog"]["when"] == "1/25 10:00~10:30"
         
     except Exception as e:
         # Skip if dependencies not available
