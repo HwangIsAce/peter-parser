@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  janusgraph:
+    image: janusgraph/janusgraph:latest
+    ports:
+      - "8182:8182"
+    environment:
+      - JANUS_PROPS_TEMPLATE=berkeleyje-lucene
+      - janusgraph.storage.backend=berkeleyje
+      - janusgraph.storage.directory=/opt/janusgraph/data
+    volumes:
+      - janusgraph-data:/opt/janusgraph/data
+
+volumes:
+  janusgraph-data:

@@ -15,7 +15,7 @@ from peter_parser.graph.nodes.chunk import create_chunk_node
 def _route_after_parse(state: PipelineState) -> str:
     """Lumber(element) 사용 시 enrich 스킵."""
     chunk_unit = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
-    if chunk_unit == "element":
+    if chunk_unit in ("element", "lifelog"):
         return "chunk"
     return "enrich"
 

@@ -2,6 +2,7 @@
 from typing import Any, Callable
 
 from peter_parser_core import BaseParser, ParserError, ParsedDocument
+from peter_parser_core.common.types import ContentModel
 
 from peter_parser.graph.states import PipelineState
 

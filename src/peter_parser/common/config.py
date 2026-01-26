@@ -38,6 +38,10 @@ class Config:
     # Lumber-based Chunking Configuration
     LUMBER_LANGUAGE_DEFAULT: str = os.getenv("LUMBER_LANGUAGE_DEFAULT", "ko")
     
+    # Lifelog Chunking Configuration
+    JANUSGRAPH_HOST: str = os.getenv("JANUSGRAPH_HOST", "localhost")
+    JANUSGRAPH_PORT: int = int(os.getenv("JANUSGRAPH_PORT", "8182"))
+    
     # Schema Descriptions for LLM structured output
     SCHEMA_DESCRIPTIONS = {
         "document_summary": "Document summary",

@@ -4,6 +4,8 @@ from typing import Any, Callable, Dict, Optional
 from peter_parser.graph.states import PipelineState
 from peter_parser.impl.chunker.vlm import VLMChunker
 from peter_parser.impl.chunker.lumber import LumberChunker
+from peter_parser.impl.chunker.lifelog import LifelogChunker
+from peter_parser.impl.db.lifelog_store import LifelogStore
 from peter_parser.common.config import Config
 
 def create_chunk_node(
@@ -31,6 +33,12 @@ def create_chunk_node(
         # Initialize chunker if needed
         if chunker is not None:
             current_chunker = chunker
+        elif chunk_unit == "lifelog":
+            try:
+                lifelog_store = LifelogStore()
+            except Exception:
+                lifelog_store = None
+            current_chunker = LifelogChunker(lifelog_store=lifelog_store)
         elif chunk_unit == "page":
             current_chunker = VLMChunker()
         else:
