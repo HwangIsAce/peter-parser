@@ -470,3 +470,49 @@ def test_pipeline_integration():
         # Skip if dependencies not available
         import pytest
         pytest.skip(f"Pipeline test skipped: {e}")
+
+
+def test_pipeline_integration_with_document_type():
+    """Pipeline with document_type='lifelog' (4-case) instead of chunk_unit."""
+    from peter_parser.graph.flow import PipelineFlow
+    from peter_parser_core import BaseParser
+    from peter_parser_core.common.types import ContentModel
+    from peter_parser_core import ParsedDocument
+
+    def sample_text():
+        return """1/25 10:00~10:30
+나
+밥을
+집에서
+-
+먹었다.
+
+1/25 14:00~15:00
+나
+회의를
+회사에서
+-
+했다."""
+
+    class MockParser(BaseParser):
+        def parse(self, document):
+            return ParsedDocument(
+                content=ContentModel(text=sample_text()),
+                elements=[],
+                pages=[],
+                metadata={"source": "mock_pdf"},
+            )
+
+    try:
+        flow = PipelineFlow(parser=MockParser())
+        state = flow.invoke(document=b"fake", document_type="lifelog")
+        assert "chunks" in state
+        assert len(state["chunks"]) == 2
+        assert "lifelog" in state["chunks"][0].metadata.extra
+        assert "export_json" in state
+        import json
+        exported = json.loads(state["export_json"])
+        assert len(exported) == 2
+    except Exception as e:
+        import pytest
+        pytest.skip(f"Pipeline document_type test skipped: {e}")

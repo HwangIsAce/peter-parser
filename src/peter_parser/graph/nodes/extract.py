@@ -2,7 +2,11 @@
 from typing import Any, Callable, Dict, Optional
 
 from peter_parser_core import ParsedDocument
-from peter_parser.graph.states import PipelineState
+from peter_parser.graph.states import (
+    PipelineState,
+    DOCUMENT_TYPE_SLIDE,
+    DOCUMENT_TYPE_HEADING,
+)
 from peter_parser.impl.extractor.document_enricher import DocumentEnricher
 from peter_parser.impl.extractor.chunk_enricher import ChunkEnricher
 
@@ -23,9 +27,16 @@ def create_extract_node(
         parsed_doc = state.get("parsed_document")
         if not parsed_doc:
             raise ValueError("parsed_document is required")
-        
+
+        # Resolve chunk_unit for enricher: document_type (4-case) maps to page/element.
+        document_type = state.get("document_type")
         chunk_unit = state.get("chunk_unit")
-        
+        if document_type == DOCUMENT_TYPE_SLIDE:
+            chunk_unit = "page"
+        elif document_type == DOCUMENT_TYPE_HEADING:
+            chunk_unit = "element"
+        # else: use state chunk_unit (or None → enricher default)
+
         # Delegate to enricher (does not modify parsed_document)
         result = enricher.enrich(
             parsed_document=parsed_doc,

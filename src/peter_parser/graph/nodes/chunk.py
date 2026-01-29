@@ -1,7 +1,13 @@
 """Chunk node implementation."""
 from typing import Any, Callable, Dict, Optional
 
-from peter_parser.graph.states import PipelineState
+from peter_parser.graph.states import (
+    PipelineState,
+    DOCUMENT_TYPE_HEADING,
+    DOCUMENT_TYPE_PLAIN,
+    DOCUMENT_TYPE_SLIDE,
+    DOCUMENT_TYPE_LIFELOG,
+)
 from peter_parser.impl.chunker.vlm import VLMChunker
 from peter_parser.impl.chunker.lumber import LumberChunker
 from peter_parser.impl.chunker.lifelog import LifelogChunker
@@ -25,27 +31,31 @@ def create_chunk_node(
         if not parsed_document:
             raise ValueError("parsed_document is required")
         
-        # Get enrichment data from state (linked, not from parsed_document)
+        # Resolve mode: document_type (4-case) takes precedence over chunk_unit (legacy).
+        document_type = state.get("document_type")
         chunk_unit = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
         document_summary = state.get("document_summary", "")
         item_metadata = state.get("item_metadata", {})
-        
+
+        use_slide = document_type == DOCUMENT_TYPE_SLIDE or chunk_unit == "page"
+        use_lifelog = document_type == DOCUMENT_TYPE_LIFELOG or chunk_unit == "lifelog"
+
         # Initialize chunker if needed
         if chunker is not None:
             current_chunker = chunker
-        elif chunk_unit == "lifelog":
+        elif use_lifelog:
             try:
                 lifelog_store = LifelogStore()
             except Exception:
                 lifelog_store = None
             current_chunker = LifelogChunker(lifelog_store=lifelog_store)
-        elif chunk_unit == "page":
+        elif use_slide:
             current_chunker = VLMChunker()
         else:
             current_chunker = LumberChunker()
-        
-        # Detect boundaries (uses linked document_summary and item_metadata from state)
-        if chunk_unit == "page":
+
+        # Detect boundaries (VLM/slide needs document_summary and item_metadata)
+        if use_slide:
             boundaries = current_chunker.detect_boundaries(
                 parsed_document=parsed_document,
                 document_summary=document_summary,

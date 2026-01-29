@@ -5,7 +5,14 @@ from typing import Optional
 
 from peter_parser_core import BaseParser
 
-from peter_parser.graph.states import PipelineState
+from peter_parser.graph.states import (
+    PipelineState,
+    DocumentType,
+    DOCUMENT_TYPE_HEADING,
+    DOCUMENT_TYPE_PLAIN,
+    DOCUMENT_TYPE_SLIDE,
+    DOCUMENT_TYPE_LIFELOG,
+)
 from peter_parser.graph.nodes.parse import create_parser_node
 from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
@@ -14,7 +21,12 @@ from peter_parser.graph.nodes.chunk import create_chunk_node
 from peter_parser.graph.nodes.export import create_export_node
 
 def _route_after_parse(state: PipelineState) -> str:
-    """Lumber(element) 사용 시 enrich 스킵."""
+    """4-case: heading/slide → enrich; plain/lifelog → chunk. Legacy: chunk_unit."""
+    document_type: str | None = state.get("document_type")
+    if document_type is not None:
+        if document_type in (DOCUMENT_TYPE_HEADING, DOCUMENT_TYPE_SLIDE):
+            return "enrich"
+        return "chunk"
     chunk_unit = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
     if chunk_unit in ("element", "lifelog"):
         return "chunk"
@@ -60,20 +72,25 @@ class PipelineFlow:
         
         return graph.compile()
     
-    def invoke(self, document: bytes | str, chunk_unit: Optional[str] = None) -> PipelineState:
+    def invoke(
+        self,
+        document: bytes | str,
+        chunk_unit: Optional[str] = None,
+        document_type: Optional[DocumentType] = None,
+    ) -> PipelineState:
         """Execute pipeline.
-        
+
         Args:
             document: 파싱할 Document
-            chunk_unit: "page" or "element" (None이면 Config.DEFAULT_CHUNK_UNIT 사용)
+            chunk_unit: Legacy. "page" | "element" | "lifelog" (None이면 Config.DEFAULT_CHUNK_UNIT)
+            document_type: 4-case. "heading" | "plain" | "slide" | "lifelog". Takes precedence over chunk_unit.
 
         Returns:
-            Final state with parsed_document
+            Final state with parsed_document, chunks, export_json.
         """
-        initial_state: PipelineState = {
-            "document": document
-        }
-        
+        initial_state: PipelineState = {"document": document}
+        if document_type is not None:
+            initial_state["document_type"] = document_type
         if chunk_unit is not None:
             initial_state["chunk_unit"] = chunk_unit
         return self.graph.invoke(initial_state)
