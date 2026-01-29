@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from typing import Optional
 
+from peter_parser.common.config import Config
 from peter_parser.impl.extractor.structured import StructuredLLM
 from peter_parser.impl.router.schema import RouterSchema, DocumentTypeLiteral
 from peter_parser.prompts.route import ROUTER_SYSTEM, build_router_instruction
-
-# Max characters to send to the LLM for routing (avoid token limits).
-ROUTER_CONTENT_MAX_CHARS = 6000
 
 
 class LLMRouter:
@@ -34,7 +32,7 @@ class LLMRouter:
         Returns:
             One of "heading", "plain", "slide", "lifelog".
         """
-        snippet = (content or "")[:ROUTER_CONTENT_MAX_CHARS]
+        snippet = (content or "")[:Config.ROUTER_CONTENT_MAX_CHARS]
         instruction = build_router_instruction(
             content=snippet,
             file_extension=file_extension,

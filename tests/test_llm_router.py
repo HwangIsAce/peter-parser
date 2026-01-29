@@ -8,7 +8,8 @@ src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
 from peter_parser.impl.router.schema import RouterSchema, DocumentTypeLiteral
-from peter_parser.impl.router.llm_router import LLMRouter, ROUTER_CONTENT_MAX_CHARS
+from peter_parser.common.config import Config
+from peter_parser.impl.router.llm_router import LLMRouter
 from peter_parser.prompts.route import ROUTER_SYSTEM, build_router_instruction
 
 
@@ -113,15 +114,15 @@ def test_llm_router_passes_instruction_and_prompt():
 
 
 def test_llm_router_truncates_long_content():
-    """LLMRouter truncates content to ROUTER_CONTENT_MAX_CHARS."""
+    """LLMRouter truncates content to Config.ROUTER_CONTENT_MAX_CHARS."""
     mock_llm = Mock()
     mock_llm.structure_output.return_value = RouterSchema(document_type="plain")
     router = LLMRouter(llm=mock_llm)
-    long_content = "x" * (ROUTER_CONTENT_MAX_CHARS + 1000)
+    max_chars = Config.ROUTER_CONTENT_MAX_CHARS
+    long_content = "x" * (max_chars + 1000)
     router.route(long_content)
     instruction = mock_llm.structure_output.call_args[1]["instruction"]
-    # Instruction contains the truncated content (no trailing xxx beyond max)
-    assert len(instruction) <= ROUTER_CONTENT_MAX_CHARS + 200  # plus XML/prompt wrapper
+    assert len(instruction) <= max_chars + 200  # plus XML/prompt wrapper
 
 
 def test_llm_router_fallback_on_exception():

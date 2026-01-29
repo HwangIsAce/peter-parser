@@ -41,6 +41,9 @@ class Config:
     # Lifelog Chunking Configuration
     JANUSGRAPH_HOST: str = os.getenv("JANUSGRAPH_HOST", "localhost")
     JANUSGRAPH_PORT: int = int(os.getenv("JANUSGRAPH_PORT", "8182"))
+
+    # LLM Router (document-type classification)
+    ROUTER_CONTENT_MAX_CHARS: int = int(os.getenv("ROUTER_CONTENT_MAX_CHARS", "6000"))
     
     # Schema Descriptions for LLM structured output
     SCHEMA_DESCRIPTIONS = {
