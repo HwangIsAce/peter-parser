@@ -13,7 +13,9 @@ from peter_parser.graph.states import (
     DOCUMENT_TYPE_SLIDE,
     DOCUMENT_TYPE_LIFELOG,
 )
+from peter_parser.impl.router.llm_router import LLMRouter
 from peter_parser.graph.nodes.parse import create_parser_node
+from peter_parser.graph.nodes.route import create_route_node
 from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
 from peter_parser.graph.nodes.extract import create_extract_node, create_chunk_enrich_node
@@ -35,11 +37,12 @@ def _route_after_parse(state: PipelineState) -> str:
 class PipelineFlow:
     """Optimized pipeline flow execution engine."""
     
-    def __init__(self, parser: BaseParser = None):
+    def __init__(self, parser: BaseParser = None, router: Optional[LLMRouter] = None):
         """Initialize pipeline flow
-        
+
         Args:
             parser: 사용할 Parser instance
+            router: Optional LLMRouter for document-type routing. If None, a new LLMRouter is used.
         """
         if parser is None:
             Config.validate()  # 필수 설정 확인
@@ -50,8 +53,9 @@ class PipelineFlow:
                 default_base64_encoding=Config.UPSTAGE_DEFAULT_BASE64_ENCODING,
                 default_model=Config.UPSTAGE_DEFAULT_MODEL,
             )
-        
+
         self.parser = parser
+        self.router = router
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:
@@ -59,13 +63,15 @@ class PipelineFlow:
         graph = StateGraph(PipelineState)
         
         graph.add_node("parse", create_parser_node(self.parser))
+        graph.add_node("route", create_route_node(self.router))
         graph.add_node("enrich", create_extract_node())
         graph.add_node("chunk", create_chunk_node())
         graph.add_node("chunk_enrich", create_chunk_enrich_node())
         graph.add_node("export", create_export_node())
         
         graph.set_entry_point("parse")
-        graph.add_conditional_edges("parse", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
+        graph.add_edge("parse", "route")
+        graph.add_conditional_edges("route", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
         graph.add_edge("enrich", "chunk")
         graph.add_edge("chunk", "chunk_enrich")
         graph.add_edge("chunk_enrich", "export")
