@@ -8,10 +8,7 @@ from peter_parser_core import BaseParser
 from peter_parser.graph.states import (
     PipelineState,
     DocumentType,
-    DOCUMENT_TYPE_HEADING,
-    DOCUMENT_TYPE_PLAIN,
     DOCUMENT_TYPE_SLIDE,
-    DOCUMENT_TYPE_LIFELOG,
 )
 from peter_parser.impl.router.llm_router import LLMRouter
 from peter_parser.graph.nodes.parse import create_parser_node
@@ -23,10 +20,10 @@ from peter_parser.graph.nodes.chunk import create_chunk_node
 from peter_parser.graph.nodes.export import create_export_node
 
 def _route_after_parse(state: PipelineState) -> str:
-    """4-case: heading/slide → enrich; plain/lifelog → chunk. Legacy: chunk_unit."""
+    """4-case: only slide → enrich; heading/plain/lifelog → chunk. Legacy: chunk_unit page → enrich."""
     document_type: str | None = state.get("document_type")
     if document_type is not None:
-        if document_type in (DOCUMENT_TYPE_HEADING, DOCUMENT_TYPE_SLIDE):
+        if document_type == DOCUMENT_TYPE_SLIDE:
             return "enrich"
         return "chunk"
     chunk_unit = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
