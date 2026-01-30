@@ -44,6 +44,10 @@ class Config:
 
     # LLM Router (document-type classification)
     ROUTER_CONTENT_MAX_CHARS: int = int(os.getenv("ROUTER_CONTENT_MAX_CHARS", "6000"))
+
+    # RQ / Redis (async parse jobs)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
     
     # Schema Descriptions for LLM structured output
     SCHEMA_DESCRIPTIONS = {

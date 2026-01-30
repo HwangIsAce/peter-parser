@@ -17,6 +17,8 @@ dependencies = [
     "nest-asyncio>=1.6.0",
     "peter-parser-core",
     "gremlinpython>=3.7.3",
+    "redis>=5.0.0",
+    "rq>=1.15.0",
 ]
 
 [project.optional-dependencies]
