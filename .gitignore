@@ -8,3 +8,7 @@ __pycache__/
 *.pyd
 *.pyw
 *.pyz
+
+# Data
+uploads/
+docs/

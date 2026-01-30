@@ -52,28 +52,68 @@ async def parse_upload(file: UploadFile = File(...)) -> ParseResponse:
     with open(path, "wb") as f:
         f.write(content)
     queue: Queue = get_queue()
-    job = queue.enqueue(run_parse_job, path)
+    job = queue.enqueue(run_parse_job, path, job_timeout=600)  # 10 min for LLM/chunk_enrich
     return ParseResponse(job_id=job.id, status="pending")
+
+
+def _safe_created_at_iso(job: RQJob) -> str:
+    """Return job created_at as ISO string; fallback to now() if missing or invalid."""
+    created_at = getattr(job, "created_at", None)
+    if created_at is None:
+        return datetime.now(timezone.utc).isoformat()
+    if getattr(created_at, "isoformat", None) is None:
+        return datetime.now(timezone.utc).isoformat()
+    try:
+        if getattr(created_at, "tzinfo", None) is None and hasattr(created_at, "replace"):
+            created_at = created_at.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return created_at.isoformat()
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_error_string(job: RQJob) -> str | None:
+    """Return error message for failed job; None otherwise. Always returns str or None."""
+    if not getattr(job, "is_failed", False):
+        return None
+    try:
+        exc = getattr(job, "exc_string", None)
+        if exc is None:
+            return None
+        return str(exc)[:4096]
+    except Exception:
+        return None
 
 
 @router.get("/status/{job_id}", response_model=StatusResponse)
 async def get_status(job_id: str) -> StatusResponse:
     """Get parse job status."""
-    conn = get_connection()
     try:
+        conn = get_connection()
         job = RQJob.fetch(job_id, connection=conn)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Job not found")
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "no such job" in err_msg or "job not found" in err_msg or "not found" in err_msg:
+            raise HTTPException(status_code=404, detail="Job not found") from e
+        try:
+            from rq.exceptions import NoSuchJobError
+            if isinstance(e, NoSuchJobError):
+                raise HTTPException(status_code=404, detail="Job not found") from e
+        except HTTPException:
+            raise
+        raise HTTPException(status_code=500, detail=f"Failed to fetch job: {type(e).__name__}: {e}") from e
     status = _status_from_rq(job)
-    created_at = job.created_at
-    if created_at and created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    return StatusResponse(
-        job_id=job_id,
-        status=status,
-        error=job.exc_string if job.is_failed else None,
-        created_at=created_at.isoformat() if created_at else datetime.now(timezone.utc).isoformat(),
-    )
+    try:
+        return StatusResponse(
+            job_id=job_id,
+            status=status,
+            error=_safe_error_string(job),
+            created_at=_safe_created_at_iso(job),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build status: {type(e).__name__}: {e}") from e
 
 
 @router.get("/result/{job_id}", response_model=ResultResponse)
@@ -91,6 +131,8 @@ async def get_result(job_id: str) -> ResultResponse:
     raw = conn.get(f"job_result:{job_id}")
     if not raw:
         raise HTTPException(status_code=404, detail="Result not found")
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
     data = json.loads(raw)
     if "error" in data:
         raise HTTPException(status_code=500, detail=data["error"])

@@ -26,6 +26,9 @@ test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]
+docs = [
+    "reportlab>=4.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
