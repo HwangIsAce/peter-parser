@@ -26,11 +26,15 @@ class Config:
         "document-parse"
     )
     
-    # OpenAI API
+    # OpenAI API (or OpenAI-compatible: vLLM, RunPod, Ollama)
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")  # e.g. http://194.68.245.144:8001/v1
+    OPENAI_VISION_BASE_URL: str = os.getenv("OPENAI_VISION_BASE_URL", "")  # e.g. http://194.68.245.144:8002/v1
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_VISION_MODEL: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")  # Vision용
-    
+    # VLM 요청 형식: "openai" (content 배열+image_url) | "runpod" (content 문자열+image_base64)
+    VLM_REQUEST_FORMAT: str = os.getenv("VLM_REQUEST_FORMAT", "openai")
+
     # VLM-basedChunking Configuration
     DEFAULT_CHUNK_UNIT: str = os.getenv("DEFAULT_CHUNK_UNIT", "element")  # "page" or "element"
     CHUNK_MAX_CONTENT_LENGTH: int = int(os.getenv("CHUNK_MAX_CONTENT_LENGTH", "10000"))  # For document summary

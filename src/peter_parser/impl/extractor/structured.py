@@ -34,20 +34,43 @@ class StructuredLLM(BaseLLM):
         self.attribute_list = self.datamodel.model_fields.items()
         self.verbose = verbose
         
-        # Initialize client
+        # Initialize client(s) for OpenAI or OpenAI-compatible (vLLM, RunPod, Ollama)
         try:
-            if Config.USE_AZURE and Config.AZURE_OPENAI_API_KEY:
+            use_azure = (
+                getattr(Config, "USE_AZURE", False)
+                and getattr(Config, "AZURE_OPENAI_API_KEY", "")
+            )
+            if use_azure:
                 client = AsyncAzureOpenAI(
                     api_key=Config.AZURE_OPENAI_API_KEY,
                     azure_endpoint=Config.AZURE_OPENAI_ENDPOINT,
                     api_version=Config.AZURE_API_VERSION,
                 )
             else:
-                client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
+                client_kwargs = {"api_key": Config.OPENAI_API_KEY or "dummy"}
+                if Config.OPENAI_BASE_URL:
+                    client_kwargs["base_url"] = Config.OPENAI_BASE_URL
+                client = AsyncOpenAI(**client_kwargs)
             self.client = instructor.from_openai(client)
+
+            # VLM client (separate endpoint when LLM and VLM use different URLs)
+            self.vlm_client = None
+            if (
+                Config.OPENAI_VISION_BASE_URL
+                and Config.OPENAI_VISION_BASE_URL != Config.OPENAI_BASE_URL
+            ):
+                vlm_kwargs = {
+                    "api_key": Config.OPENAI_API_KEY or "dummy",
+                    "base_url": Config.OPENAI_VISION_BASE_URL,
+                }
+                self.vlm_client = instructor.from_openai(AsyncOpenAI(**vlm_kwargs))
         except Exception:
-            client = AsyncOpenAI(api_key=Config.OPENAI_API_KEY)
+            client_kwargs = {"api_key": Config.OPENAI_API_KEY or "dummy"}
+            if Config.OPENAI_BASE_URL:
+                client_kwargs["base_url"] = Config.OPENAI_BASE_URL
+            client = AsyncOpenAI(**client_kwargs)
             self.client = instructor.from_openai(client)
+            self.vlm_client = None
     
     def _get_structure_information(
         self,
@@ -151,34 +174,46 @@ class StructuredLLM(BaseLLM):
         
         # Messages 구성
         messages = [{"role": "system", "content": system}]
-        
+
         # Images가 있으면 vision 형식으로
+        vlm_format = (Config.VLM_REQUEST_FORMAT or "openai").lower()
         if images:
-            content = [{"type": "text", "text": user}]
-            for img_data in images:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": self._prepare_image_data(img_data)
-                    }
+            if vlm_format == "runpod":
+                # RunPod: content 문자열 + image_base64 (첫 번째 이미지 사용)
+                img_b64 = self._prepare_image_data(images[0])
+                messages.append({
+                    "role": "user",
+                    "content": user,
+                    "image_base64": img_b64,
                 })
-            messages.append({"role": "user", "content": content})
-            # Vision 모델 사용
+            else:
+                # OpenAI: content 배열 + image_url
+                content = [{"type": "text", "text": user}]
+                for img_data in images:
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": self._prepare_image_data(img_data)},
+                    })
+                messages.append({"role": "user", "content": content})
             model = kwargs.get("model", Config.OPENAI_VISION_MODEL)
         else:
             messages.append({"role": "user", "content": user})
             model = kwargs.get("model", Config.OPENAI_MODEL)
-        
-        # 비동기 호출을 동기적으로 실행
+
+        # Use VLM client when images present and VLM has separate endpoint
+        api_client = (
+            self.vlm_client if (images and self.vlm_client) else self.client
+        )
+
         async def _async_call():
-            return await self.client.chat.completions.create(
+            return await api_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 response_model=datamodel,
                 temperature=kwargs.get("temperature", 0.0),
                 max_tokens=kwargs.get("max_tokens", 2048),
             )
-        
+
         return self._run_async(_async_call())
     
     async def astructure_output(
@@ -216,24 +251,36 @@ class StructuredLLM(BaseLLM):
         
         # Messages 구성
         messages = [{"role": "system", "content": system}]
-        
+
         # Images가 있으면 vision 형식으로
+        vlm_format = (Config.VLM_REQUEST_FORMAT or "openai").lower()
         if images:
-            content = [{"type": "text", "text": user}]
-            for img_data in images:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": self._prepare_image_data(img_data)
-                    }
+            if vlm_format == "runpod":
+                # RunPod: content 문자열 + image_base64 (첫 번째 이미지 사용)
+                img_b64 = self._prepare_image_data(images[0])
+                messages.append({
+                    "role": "user",
+                    "content": user,
+                    "image_base64": img_b64,
                 })
-            messages.append({"role": "user", "content": content})
+            else:
+                # OpenAI: content 배열 + image_url
+                content = [{"type": "text", "text": user}]
+                for img_data in images:
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": self._prepare_image_data(img_data)},
+                    })
+                messages.append({"role": "user", "content": content})
             model = kwargs.get("model", Config.OPENAI_VISION_MODEL)
         else:
             messages.append({"role": "user", "content": user})
             model = kwargs.get("model", Config.OPENAI_MODEL)
-        
-        return await self.client.chat.completions.create(
+
+        api_client = (
+            self.vlm_client if (images and self.vlm_client) else self.client
+        )
+        return await api_client.chat.completions.create(
             model=model,
             messages=messages,
             response_model=datamodel,
