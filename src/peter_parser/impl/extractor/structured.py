@@ -6,7 +6,7 @@ import instructor
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from pydantic import BaseModel
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, get_origin, get_args
 
 from peter_parser_core import BaseLLM, LLMError
 from peter_parser.common.config import Config
@@ -51,7 +51,8 @@ class StructuredLLM(BaseLLM):
                 if Config.OPENAI_BASE_URL:
                     client_kwargs["base_url"] = Config.OPENAI_BASE_URL
                 client = AsyncOpenAI(**client_kwargs)
-            self.client = instructor.from_openai(client)
+            # Mode.JSON: 모델이 content에 JSON을 반환할 때 사용 (tool_calls 미지원 시, e.g. Qwen)
+            self.client = instructor.from_openai(client, mode=instructor.Mode.JSON)
 
             # VLM client (separate endpoint when LLM and VLM use different URLs)
             self.vlm_client = None
@@ -63,13 +64,15 @@ class StructuredLLM(BaseLLM):
                     "api_key": Config.OPENAI_API_KEY or "dummy",
                     "base_url": Config.OPENAI_VISION_BASE_URL,
                 }
-                self.vlm_client = instructor.from_openai(AsyncOpenAI(**vlm_kwargs))
+                self.vlm_client = instructor.from_openai(
+                    AsyncOpenAI(**vlm_kwargs), mode=instructor.Mode.JSON
+                )
         except Exception:
             client_kwargs = {"api_key": Config.OPENAI_API_KEY or "dummy"}
             if Config.OPENAI_BASE_URL:
                 client_kwargs["base_url"] = Config.OPENAI_BASE_URL
             client = AsyncOpenAI(**client_kwargs)
-            self.client = instructor.from_openai(client)
+            self.client = instructor.from_openai(client, mode=instructor.Mode.JSON)
             self.vlm_client = None
     
     def _get_structure_information(
@@ -91,7 +94,40 @@ class StructuredLLM(BaseLLM):
             except Exception as e:
                 raise KeyError(f"Field '{field_name}' processing error: {e}") from e
         return result
-    
+
+    def _annotation_to_type_hint(self, annotation: Any) -> str:
+        """Convert Pydantic/typing annotation to a short type hint for the prompt."""
+        if get_origin(annotation) is list:
+            args = get_args(annotation)
+            if args and args[0] is str:
+                return "array of strings"
+            return "array"
+        if annotation is str or (hasattr(annotation, "__name__") and annotation.__name__ == "str"):
+            return "string"
+        if annotation is int or (hasattr(annotation, "__name__") and annotation.__name__ == "int"):
+            return "integer"
+        if annotation is bool or (hasattr(annotation, "__name__") and annotation.__name__ == "bool"):
+            return "boolean"
+        if hasattr(annotation, "__name__"):
+            return str(annotation.__name__).lower()
+        return "value"
+
+    def _format_structure_for_prompt(self, structure_info: Dict[str, Any]) -> str:
+        """Format structure information as a flat JSON schema for the prompt.
+
+        Describes each field as 'key (type): description' so the model outputs
+        flat JSON (key -> value) instead of nested {value, annotation}.
+        """
+        lines = []
+        for key, info in structure_info.items():
+            if not isinstance(info, dict):
+                continue
+            desc = info.get("value") or ""
+            ann = info.get("annotation")
+            type_hint = self._annotation_to_type_hint(ann) if ann else "value"
+            lines.append(f"- {key} ({type_hint}): {desc}")
+        return "\n".join(lines) if lines else str(structure_info)
+
     def _prepare_image_data(self, image_data: bytes) -> str:
         """Prepare image data for OpenAI API.
         
@@ -167,9 +203,10 @@ class StructuredLLM(BaseLLM):
             if user_system_prompt == " "
             else user_system_prompt
         )
+        structure_info = self._get_structure_information(**kwargs)
         user = STRUCTURED_OUTPUT_PROMPT.format(
             user_question=instruction,
-            structure_information=self._get_structure_information(**kwargs)
+            structure_information=self._format_structure_for_prompt(structure_info),
         )
         
         # Messages 구성
@@ -244,9 +281,10 @@ class StructuredLLM(BaseLLM):
             if user_system_prompt == " "
             else user_system_prompt
         )
+        structure_info = self._get_structure_information(**kwargs)
         user = STRUCTURED_OUTPUT_PROMPT.format(
             user_question=instruction,
-            structure_information=self._get_structure_information(**kwargs)
+            structure_information=self._format_structure_for_prompt(structure_info),
         )
         
         # Messages 구성
