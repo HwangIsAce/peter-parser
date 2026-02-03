@@ -19,6 +19,7 @@ dependencies = [
     "gremlinpython>=3.7.3",
     "redis>=5.0.0",
     "rq>=1.15.0",
+    "pymupdf>=1.24.0",
 ]
 
 [project.optional-dependencies]

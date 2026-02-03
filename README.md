@@ -5,7 +5,7 @@ Document processing pipeline with optimized modules.
 ## Pipeline flow
 
 1. **parse** — Document (PDF, etc.) is parsed into a structured `ParsedDocument`.
-2. **route** — Document type is set: either from `invoke(document_type=...)` or by an LLM router that classifies the content.
+2. **route** — Document type is set: either from `invoke(document_type=...)` or by a **VLM router** (when the input is PDF bytes: a few sampled pages are rendered and sent to a vision model with few-shot examples from `assets/router_fewshot/`) or by an **LLM router** (text-only fallback).
 3. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` → **chunk** directly.
 4. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog).
 5. **chunk_enrich** — Chunk-level metadata (summary, keywords).
@@ -19,6 +19,16 @@ Document processing pipeline with optimized modules.
 | `plain`   | Unstructured text (notes, blog body)              | chunk            |
 | `slide`   | Presentation / slide deck                        | enrich → chunk   |
 | `lifelog` | 5W1H event-style daily log                       | chunk (LifelogChunker) |
+
+### Routing (VLM + few-shot)
+
+When `document_type` is not provided, the route node uses **VLM** when the input is PDF bytes: the document is sampled (uniform or random) for up to **4 pages** (configurable via `ROUTER_VLM_MAX_PAGES`), rendered to images, and sent to a vision model together with **few-shot** images from `assets/router_fewshot/` (heading, slide, lifelog). If the input is not PDF or no images are produced, the **LLM** router classifies from parsed text (first 6000 chars). Few-shot images can be generated from `docs/input/` PDFs by running: `uv run python scripts/generate_router_fewshot.py`.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ROUTER_VLM_MAX_PAGES` | Number of pages to sample from the document for VLM | `4` |
+| `ROUTER_VLM_PAGE_SAMPLE` | Sampling strategy: `uniform` or `random` | `uniform` |
+| `ROUTER_FEWSHOT_DIR` | Directory with `heading/`, `slide/`, `lifelog/` subdirs of images | (project) `assets/router_fewshot` |
 
 ## Plain chunking (LumberChunker, page-unit)
 

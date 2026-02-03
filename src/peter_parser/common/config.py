@@ -52,6 +52,10 @@ class Config:
 
     # LLM Router (document-type classification)
     ROUTER_CONTENT_MAX_CHARS: int = int(os.getenv("ROUTER_CONTENT_MAX_CHARS", "6000"))
+    # VLM Router (sample pages from document for classification)
+    ROUTER_VLM_MAX_PAGES: int = int(os.getenv("ROUTER_VLM_MAX_PAGES", "4"))
+    ROUTER_VLM_PAGE_SAMPLE: str = os.getenv("ROUTER_VLM_PAGE_SAMPLE", "uniform")  # uniform | random
+    ROUTER_FEWSHOT_DIR: str = os.getenv("ROUTER_FEWSHOT_DIR", "")  # default: assets/router_fewshot
 
     # RQ / Redis (async parse jobs)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

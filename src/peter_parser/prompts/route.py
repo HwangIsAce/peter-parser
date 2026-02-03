@@ -17,6 +17,34 @@ ROUTER_INSTRUCTION = """다음 문서 내용을 보고 document_type을 한 가�
 """
 
 
+ROUTER_VLM_SYSTEM = """문서 타입을 다음 네 가지 중 하나로 분류합니다.
+
+- heading: 제목/헤딩 구조가 있는 정형 문서 (논문, 보고서, 계약서 등). 섹션·챕터가 명확함.
+- plain: 헤딩 구조 없이 흐름 있는 비정형 텍스트 (일기, 메모, 블로그 본문 등).
+- slide: 슬라이드/발표 자료 형식. 불릿, 짧은 문장, 페이지 단위 구성.
+- lifelog: 5W1H(언제/누가/무엇을/어디서/왜·어떻게) 형식의 일일 기록. 이벤트 단위 나열.
+
+이미지는 문서에서 골라 낸 페이지들입니다. 레이아웃과 구조를 보고 document_type을 한 가지만 반환하세요."""
+
+ROUTER_VLM_INSTRUCTION = """아래 이미지들은 분류할 문서에서 골라 낸 {num_doc}페이지입니다.
+{fewshot_note}
+
+document_type을 heading / plain / slide / lifelog 중 하나로 선택하세요."""
+
+
+def build_router_vlm_instruction(num_doc_images: int, has_fewshot: bool) -> str:
+    """Build user instruction for VLM router (image-based classification)."""
+    fewshot_note = (
+        "이후 이미지들은 예시입니다(순서: heading, slide, lifelog). 참고하여 분류하세요."
+        if has_fewshot
+        else ""
+    )
+    return ROUTER_VLM_INSTRUCTION.format(
+        num_doc=num_doc_images,
+        fewshot_note=fewshot_note,
+    ).strip()
+
+
 def build_router_instruction(
     content: str,
     file_extension: str | None = None,
