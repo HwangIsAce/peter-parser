@@ -41,6 +41,9 @@ class Config:
     
     # Lumber-based Chunking Configuration
     LUMBER_LANGUAGE_DEFAULT: str = os.getenv("LUMBER_LANGUAGE_DEFAULT", "ko")
+
+    # Heading prompt-based chunking (10-page windows)
+    HEADING_CHUNK_MAX_PAGES: int = int(os.getenv("HEADING_CHUNK_MAX_PAGES", "10"))
     
     # Lifelog Chunking Configuration
     JANUSGRAPH_HOST: str = os.getenv("JANUSGRAPH_HOST", "localhost")
