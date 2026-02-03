@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 
 from rq import get_current_job
 
+from peter_parser.common.config import Config
 from peter_parser.common.queue import get_connection
 from peter_parser.graph.flow import PipelineFlow
 from peter_parser.graph.states import DOCUMENT_TYPE_SLIDE
@@ -13,6 +16,8 @@ from peter_parser.api.schemas.job_snapshot import JobSnapshot, SLIDE_JOB_QUEUE
 
 # TTL for job_result and job_snapshot (7 days).
 JOB_STORAGE_TTL = 86400 * 7
+
+logger = logging.getLogger(__name__)
 
 
 def run_parse_job(file_path: str) -> None:
@@ -58,3 +63,58 @@ def run_parse_job(file_path: str) -> None:
                 os.remove(file_path)
             except OSError:
                 pass
+
+
+def run_vlm_chunk_optimization_batch() -> None:
+    """
+    RQ job: pop up to VLM_OPT_BATCH_SIZE job_ids from slide_job_queue, load
+    job_snapshot for each, run optimizer (evaluate + optimize user prompt),
+    write both VLM prompts to Redis. Enqueue periodically via cron or when
+    slide jobs accumulate (e.g. cron: rq enqueue peter_parser.api.tasks.run_vlm_chunk_optimization_batch).
+    """
+    conn = get_connection()
+    batch_size = Config.VLM_OPT_BATCH_SIZE
+    raw = conn.lpop(SLIDE_JOB_QUEUE, batch_size)
+    if not raw:
+        logger.info("run_vlm_chunk_optimization_batch: slide_job_queue empty, skipping")
+        return
+    job_ids = [j.decode("utf-8") if isinstance(j, bytes) else str(j) for j in (raw if isinstance(raw, list) else [raw])]
+    snapshots: list[dict] = []
+    for job_id in job_ids:
+        key = f"job_snapshot:{job_id}"
+        data = conn.get(key)
+        if data is None:
+            logger.warning("run_vlm_chunk_optimization_batch: missing snapshot for job_id=%s", job_id)
+            continue
+        try:
+            payload = json.loads(data.decode("utf-8") if isinstance(data, bytes) else data)
+            snapshots.append(payload)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning("run_vlm_chunk_optimization_batch: invalid snapshot job_id=%s err=%s", job_id, e)
+            continue
+    if not snapshots:
+        logger.info("run_vlm_chunk_optimization_batch: no valid snapshots, skipping")
+        return
+    start = time.perf_counter()
+    try:
+        from peter_parser.impl.optimizer_adapter import run_optimization_and_save_prompts
+
+        run_optimization_and_save_prompts(
+            snapshots,
+            openai_model=Config.VLM_OPT_OPENAI_MODEL or None,
+        )
+        elapsed = time.perf_counter() - start
+        logger.info(
+            "run_vlm_chunk_optimization_batch: success snapshots=%d job_ids=%s elapsed=%.2fs",
+            len(snapshots),
+            job_ids[:5] if len(job_ids) > 5 else job_ids,
+            elapsed,
+        )
+    except Exception as e:
+        logger.exception(
+            "run_vlm_chunk_optimization_batch: failed snapshots=%d job_ids=%s err=%s",
+            len(snapshots),
+            job_ids[:5] if len(job_ids) > 5 else job_ids,
+            e,
+        )
+        raise

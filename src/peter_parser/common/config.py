@@ -52,6 +52,10 @@ class Config:
     # RQ / Redis (async parse jobs)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
+
+    # VLM Chunker optimization batch (Phase 4)
+    VLM_OPT_BATCH_SIZE: int = int(os.getenv("VLM_OPT_BATCH_SIZE", "10"))
+    VLM_OPT_OPENAI_MODEL: str = os.getenv("VLM_OPT_OPENAI_MODEL", "gpt-4")
     
     # Schema Descriptions for LLM structured output
     SCHEMA_DESCRIPTIONS = {
