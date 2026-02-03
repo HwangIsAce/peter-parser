@@ -20,6 +20,10 @@ def chunk_to_result_item(chunk: "Chunk") -> ResultItem:
     if isinstance(extra.get("page_numbers"), list):
         doc_page = extra["page_numbers"]
     doc_title = getattr(chunk, "doc_title", None) or ""
+    # Heading chunker sets heading_path (list); expose as category for API when present
+    category = extra.get("category", []) if isinstance(extra.get("category"), list) else []
+    if isinstance(extra.get("heading_path"), list) and extra["heading_path"]:
+        category = extra["heading_path"]
     return ResultItem(
         uuid=getattr(chunk, "uuid", "") or "",
         doc_title=doc_title if isinstance(doc_title, str) else str(doc_title),
@@ -31,7 +35,7 @@ def chunk_to_result_item(chunk: "Chunk") -> ResultItem:
             process_title="",
             doc_unit=extra.get("doc_unit", "") if isinstance(extra.get("doc_unit"), str) else "",
             doc_page=doc_page,
-            category=extra.get("category", []) if isinstance(extra.get("category"), list) else [],
+            category=category,
             images=[],  # Fill from extra.images if needed
         ),
     )

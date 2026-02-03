@@ -172,7 +172,11 @@ class HeadingPromptChunker:
         chunk_boundaries: List[int],
         doc_title: Optional[str] = None,
     ) -> Tuple[List[Chunk], ParsedDocument]:
-        """Create chunks from boundaries; add heading1/heading2/heading3/heading_path to metadata.extra."""
+        """Create chunks from boundaries; add heading hierarchy to metadata.extra.
+
+        extra keys (heading docs only): heading1, heading2, heading3 (str; empty if absent),
+        heading_path (list of strings, e.g. [h1, h2, h3]). Export and API may use these.
+        """
         elements = getattr(parsed_document, "elements", None) or []
         if not elements:
             return [], parsed_document
