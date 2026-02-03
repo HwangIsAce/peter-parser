@@ -29,6 +29,9 @@ test = [
 docs = [
     "reportlab>=4.0.0",
 ]
+optimizer = [
+    "llm-chunker-optimizer",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -39,3 +42,4 @@ packages = ["src/peter_parser"]
 
 [tool.uv.sources]
 peter-parser-core = { path = "../peter-parser-core" }
+llm-chunker-optimizer = { path = "../../../modules/llm-chunker-optimizer" }
