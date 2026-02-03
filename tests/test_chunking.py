@@ -245,6 +245,92 @@ def create_mock_korean_document_with_heading1() -> ParsedDocument:
     )
 
 
+def create_mock_plain_document_two_pages() -> ParsedDocument:
+    """Create a mock ParsedDocument for plain (no heading1), 2 pages. Same layout as Korean doc but all paragraph."""
+    elements = [
+        Element(
+            element_id=0,
+            page_number=1,
+            category="paragraph",
+            text="첫 번째 단락입니다. 연구의 배경을 설명합니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+        Element(
+            element_id=1,
+            page_number=1,
+            category="paragraph",
+            text="이 장에서는 연구 목적을 설명합니다. 목적은 다음과 같습니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+        Element(
+            element_id=2,
+            page_number=1,
+            category="paragraph",
+            text="첫째, 문제를 정의합니다. 둘째, 해결 방안을 제시합니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+        Element(
+            element_id=3,
+            page_number=2,
+            category="paragraph",
+            text="다음 페이지의 첫 단락입니다. 주요 내용을 다룹니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+        Element(
+            element_id=4,
+            page_number=2,
+            category="paragraph",
+            text="본론에서는 실험 결과를 분석합니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+        Element(
+            element_id=5,
+            page_number=2,
+            category="paragraph",
+            text="결과는 매우 긍정적입니다. 향후 연구 방향을 제시합니다.",
+            coordinates=None,
+            enrichment_metadata=None,
+            chunk_uuid=None,
+        ),
+    ]
+    pages = [
+        Page(
+            page_number=1,
+            text="첫 번째 단락입니다.\n이 장에서는 연구 목적을 설명합니다.\n첫째, 문제를 정의합니다.",
+            tables=[],
+            images=[],
+        ),
+        Page(
+            page_number=2,
+            text="다음 페이지의 첫 단락입니다.\n본론에서는 실험 결과를 분석합니다.\n결과는 매우 긍정적입니다.",
+            tables=[],
+            images=[],
+        ),
+    ]
+    content = ContentModel(
+        html=None,
+        markdown=None,
+        text="첫 번째 단락입니다.\n\n다음 페이지의 첫 단락입니다.",
+        summary=None,
+    )
+    return ParsedDocument(
+        pages=pages,
+        elements=elements,
+        content=content,
+        metadata={"language": "ko", "total_pages": 2},
+    )
+
+
 def test_document_enricher_structure():
     """Test DocumentEnricher structure (no API calls)."""
     print("=" * 60)
@@ -495,16 +581,16 @@ def test_lumber_chunker_structure():
 
 
 def test_lumber_chunker_chunk_logic():
-    """Test LumberChunker chunk logic with mock boundaries (no API calls)."""
+    """Test LumberChunker chunk logic with mock boundaries (no API calls). Uses plain doc (no heading1)."""
     print("\n" + "=" * 60)
     print("Testing LumberChunker Chunk Logic (Mock Boundaries)")
     print("=" * 60)
     
     chunker = LumberChunker()
-    parsed_doc = create_mock_korean_document_with_heading1()
+    parsed_doc = create_mock_plain_document_two_pages()
     
-    # Mock boundaries (element 인덱스)
-    boundaries = [2, 4]  # element 2, 4에서 경계
+    # Mock boundaries (element indices)
+    boundaries = [2, 4]  # boundaries at element 2, 4
     
     chunks, updated_doc = chunker.chunk(parsed_doc, boundaries, doc_title="테스트 문서")
     
@@ -676,9 +762,9 @@ def test_chunk_node_heading_selection():
 
 
 def test_lumber_chunker_detect_boundaries():
-    """Test LumberChunker.detect_boundaries (real API calls)."""
+    """Test LumberChunker.detect_boundaries (page-unit; real API calls when key set)."""
     print("\n" + "=" * 60)
-    print("Testing LumberChunker detect_boundaries")
+    print("Testing LumberChunker detect_boundaries (page-unit)")
     print("=" * 60)
     
     from peter_parser.common.config import Config
@@ -688,19 +774,12 @@ def test_lumber_chunker_detect_boundaries():
         return
     
     try:
-        parsed_doc = create_mock_korean_document_with_heading1()
+        parsed_doc = create_mock_plain_document_two_pages()
         chunker = LumberChunker()
-        
         boundaries = chunker.detect_boundaries(parsed_doc)
-        
         assert isinstance(boundaries, list)
-        # heading1이 2개면 최소 경계는 있을 수 있음
-        h1_count = len([el for el in parsed_doc.elements if el.category == "heading1"])
-        if h1_count > 1:
-            print(f"✓ Boundaries detected: {boundaries}")
-        else:
-            print(f"✓ Boundaries (no heading1): {boundaries}")
-        
+        # Plain: section = page; boundaries are element indices (within or across pages)
+        print(f"✓ Boundaries detected: {boundaries}")
         print("✓ LumberChunker detect_boundaries test passed")
     except Exception as e:
         print(f"\n✗ Error: {e}")
@@ -709,7 +788,7 @@ def test_lumber_chunker_detect_boundaries():
 
 
 def test_chunk_node_lumber_selection():
-    """Test chunk_node에서 LumberChunker 선택 (no API calls for chunking)."""
+    """Test chunk_node selects LumberChunker for plain / element (no API for chunk)."""
     print("\n" + "=" * 60)
     print("Testing chunk_node LumberChunker Selection")
     print("=" * 60)
@@ -717,7 +796,7 @@ def test_chunk_node_lumber_selection():
     from peter_parser.graph.nodes.chunk import create_chunk_node
     from peter_parser.graph.states import PipelineState
     
-    parsed_doc = create_mock_korean_document_with_heading1()
+    parsed_doc = create_mock_plain_document_two_pages()
     state: PipelineState = {
         "parsed_document": parsed_doc,
         "chunk_unit": "element",

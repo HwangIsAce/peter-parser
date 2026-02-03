@@ -39,8 +39,9 @@ class Config:
     DEFAULT_CHUNK_UNIT: str = os.getenv("DEFAULT_CHUNK_UNIT", "element")  # "page" or "element"
     CHUNK_MAX_CONTENT_LENGTH: int = int(os.getenv("CHUNK_MAX_CONTENT_LENGTH", "10000"))  # For document summary
     
-    # Lumber-based Chunking Configuration
+    # Lumber-based Chunking Configuration (plain docs: section = page)
     LUMBER_LANGUAGE_DEFAULT: str = os.getenv("LUMBER_LANGUAGE_DEFAULT", "ko")
+    LUMBER_PLAIN_PAGES_PER_SECTION: int = int(os.getenv("LUMBER_PLAIN_PAGES_PER_SECTION", "1"))
 
     # Heading prompt-based chunking (10-page windows)
     HEADING_CHUNK_MAX_PAGES: int = int(os.getenv("HEADING_CHUNK_MAX_PAGES", "10"))

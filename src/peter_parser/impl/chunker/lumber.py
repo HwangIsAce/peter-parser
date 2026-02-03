@@ -4,7 +4,7 @@ import uuid
 from pydantic import BaseModel, Field
 from peter_parser.impl.extractor.structured import StructuredLLM
 
-from typing import List, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 from peter_parser.common.utils import split_sentences, segment_to_element_boundaries
 from peter_parser_core import ParsedDocument
@@ -14,15 +14,15 @@ from peter_parser.prompts.chunking import LUMBER_SECTION_PROMPT, LUMBER_SYSTEM_P
 
 
 class SectionBoundaries(BaseModel):
-    """Boundaries of a section between two heading1 boundaries."""
+    """Boundaries within a page section (segment indices where new chunks start)."""
     boundaries: List[int] = Field(
         description=Config.SCHEMA_DESCRIPTIONS["chunk_boundaries"]
     )
 
+
 class LumberChunker:
-    """Customized Lumber chunker implementation"""    
-    
-    
+    """Lumber chunker for plain documents: section = one page, boundaries per page."""
+
     def __init__(
         self,
         llm: Optional[StructuredLLM] = None,
@@ -30,24 +30,43 @@ class LumberChunker:
         if llm is None:
             llm = StructuredLLM(datamodel=SectionBoundaries)
         self.llm = llm
-        
+
     def detect_boundaries(
         self,
-        parsed_document: ParsedDocument,        
+        parsed_document: ParsedDocument,
     ) -> List[int]:
-        
+        """Detect chunk boundaries per page (plain has no heading1; page is the section unit)."""
         elements = getattr(parsed_document, "elements", None) or []
         if not elements:
             return []
         language = (parsed_document.metadata or {}).get("language", Config.LUMBER_LANGUAGE_DEFAULT)
-        
-        h1_indices = [i for i, element in enumerate(elements) if element.category == "heading1"]
-        if not h1_indices:
-            h1_indices = [0]
-            
+        pages_per_section = Config.LUMBER_PLAIN_PAGES_PER_SECTION
+
+        # Group element indices by page (order-preserving)
+        page_to_indices: Dict[int, List[int]] = {}
+        for i, el in enumerate(elements):
+            p = getattr(el, "page_number", 1)
+            if p not in page_to_indices:
+                page_to_indices[p] = []
+            page_to_indices[p].append(i)
+        ordered_pages = sorted(page_to_indices.keys())
+
+        # Build sections: each section = up to pages_per_section consecutive pages
+        sections: List[Tuple[int, int, List[int]]] = []
+        i = 0
+        while i < len(ordered_pages):
+            group = ordered_pages[i : i + pages_per_section]
+            indices = []
+            for p in group:
+                indices.extend(page_to_indices[p])
+            indices.sort()
+            if indices:
+                start_idx, end_idx = indices[0], indices[-1] + 1
+                sections.append((start_idx, end_idx, indices))
+            i += pages_per_section
+
         all_boundaries: List[int] = []
-        for i, start_idx in enumerate(h1_indices):
-            end_idx = h1_indices[i + 1] if i + 1 < len(h1_indices) else len(elements)
+        for start_idx, end_idx, _ in sections:
             section_el = elements[start_idx:end_idx]
             section_text = "\n".join([el.text for el in section_el if el.text])
             if not section_text.strip():
@@ -55,14 +74,12 @@ class LumberChunker:
             segments = split_sentences(section_text, language)
             if len(segments) <= 1:
                 continue
-        
-            section_heading = section_el[0].text if section_el else ""
+
             id_segments = [f"ID {k}: {s}" for k, s in enumerate(segments)]
             document = "\n".join(id_segments)
-            heading = section_heading[:100] + "..." if len(section_heading) > 100 else section_heading
-
+            page_num = section_el[0].page_number if section_el else 1
             instruction = LUMBER_SECTION_PROMPT.format(
-                section_heading=heading,
+                page_number=page_num,
                 document=document,
             )
             try:

@@ -33,21 +33,21 @@ Consider semantic coherence and topic changes when determining boundaries.
 Return only the boundary indices as a list of integers."""
 
 # -----------------------------------------------------------------------------
-# LumberChunker
+# LumberChunker (plain docs: one page = one section)
 # -----------------------------------------------------------------------------
 
-LUMBER_SYSTEM_PROMPT = """You are an expert in document structure. You receive a document section between two heading1 boundaries.
+LUMBER_SYSTEM_PROMPT = """You are an expert in document structure. You receive the content of a single page.
 
-Task: Identify optimal chunk boundaries for hierarchical chunking within the section. Consider sub-topics, paragraph breaks, and semantic coherence.
+Task: Identify optimal chunk boundaries within this page. Consider paragraph breaks and semantic coherence. Prefer fewer, larger chunks when the content is short.
 
 Output: Return a list of segment indices (0-based) where new chunks start. Do not include 0."""
 
-LUMBER_SECTION_PROMPT = """<SECTION_HEADING>
-{section_heading}
-</SECTION_HEADING>
+LUMBER_SECTION_PROMPT = """<PAGE_NUMBER>
+{page_number}
+</PAGE_NUMBER>
 
-<SECTION_CONTENT>
+<PAGE_CONTENT>
 {document}
-</SECTION_CONTENT>
+</PAGE_CONTENT>
 
-This is a section between two heading1 boundaries. Analyze it and identify optimal chunk boundaries for hierarchical chunking. Return a list of segment indices where new chunks start. Do not include 0."""
+This is the content of one page. Identify optimal chunk boundaries within this page. Return a list of segment indices where new chunks start. Do not include 0."""

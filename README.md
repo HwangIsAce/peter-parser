@@ -20,6 +20,10 @@ Document processing pipeline with optimized modules.
 | `slide`   | Presentation / slide deck                        | enrich → chunk   |
 | `lifelog` | 5W1H event-style daily log                       | chunk (LifelogChunker) |
 
+## Plain chunking (LumberChunker, page-unit)
+
+For **plain** documents, the chunk stage uses **LumberChunker** with **page as the section unit**: there is no heading1, so boundaries are detected **within each page** (or each window of `LUMBER_PLAIN_PAGES_PER_SECTION` pages). This avoids overly fine-grained chunks and keeps LLM input small. Each page’s content is split into sentences, the LLM suggests chunk boundaries within that page, and boundaries are mapped to element indices and merged globally.
+
 ## Heading chunking (heading documents)
 
 For **heading** documents, the chunk stage uses **HeadingPromptChunker**: content is processed in windows of up to **10 pages** (configurable via `HEADING_CHUNK_MAX_PAGES`). An LLM identifies heading1 / heading2 / heading3 and outputs chunk boundaries by segment (element) index.
