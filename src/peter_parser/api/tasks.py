@@ -99,16 +99,17 @@ def run_vlm_chunk_optimization_batch() -> None:
     try:
         from peter_parser.impl.optimizer_adapter import run_optimization_and_save_prompts
 
-        run_optimization_and_save_prompts(
+        metrics = run_optimization_and_save_prompts(
             snapshots,
             openai_model=Config.VLM_OPT_OPENAI_MODEL or None,
         )
         elapsed = time.perf_counter() - start
         logger.info(
-            "run_vlm_chunk_optimization_batch: success snapshots=%d job_ids=%s elapsed=%.2fs",
+            "run_vlm_chunk_optimization_batch: success snapshots=%d job_ids=%s elapsed=%.2fs metrics=%s",
             len(snapshots),
             job_ids[:5] if len(job_ids) > 5 else job_ids,
             elapsed,
+            metrics,
         )
     except Exception as e:
         logger.exception(

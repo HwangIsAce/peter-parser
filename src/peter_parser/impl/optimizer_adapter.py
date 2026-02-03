@@ -71,7 +71,7 @@ def run_optimization_and_save_prompts(
     snapshots: List[Dict[str, Any]],
     *,
     openai_model: Optional[str] = None,
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Evaluate chunks from snapshots, run one prompt optimization, write both
     VLM prompts to Redis. Uses current Redis/code prompts as initial;
@@ -80,6 +80,9 @@ def run_optimization_and_save_prompts(
     Args:
         snapshots: List of job snapshot dicts (from job_snapshot:{job_id}).
         openai_model: Optional OpenAI model for OptimizePromptUseCase.
+
+    Returns:
+        Evaluation metrics dict (e.g. overall_score, boundary_clarity, hope_score) for logging, or None if skipped.
     """
     if not _OPTIMIZER_AVAILABLE:
         raise RuntimeError(
@@ -98,7 +101,7 @@ def run_optimization_and_save_prompts(
     original_text = "\n\n".join(all_texts)
 
     if not all_chunks:
-        return
+        return None
 
     evaluate_use_case = EvaluateChunksUseCase()
     metrics = evaluate_use_case.execute(all_chunks, original_text)
@@ -118,3 +121,4 @@ def run_optimization_and_save_prompts(
 
     set_prompt(PROMPT_KEY_VLM_BOUNDARY_SYSTEM, system_content)
     set_prompt(PROMPT_KEY_VLM_BOUNDARY_USER, new_prompt.content)
+    return metrics.to_dict()
