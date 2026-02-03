@@ -11,6 +11,7 @@ from peter_parser.graph.states import (
 from peter_parser.impl.chunker.vlm import VLMChunker
 from peter_parser.impl.chunker.lumber import LumberChunker
 from peter_parser.impl.chunker.lifelog import LifelogChunker
+from peter_parser.impl.chunker.heading import HeadingPromptChunker
 from peter_parser.impl.db.lifelog_store import LifelogStore
 from peter_parser.common.config import Config
 
@@ -39,6 +40,7 @@ def create_chunk_node(
 
         use_slide = document_type == DOCUMENT_TYPE_SLIDE or chunk_unit == "page"
         use_lifelog = document_type == DOCUMENT_TYPE_LIFELOG or chunk_unit == "lifelog"
+        use_heading = document_type == DOCUMENT_TYPE_HEADING
 
         # Initialize chunker if needed
         if chunker is not None:
@@ -51,6 +53,8 @@ def create_chunk_node(
             current_chunker = LifelogChunker(lifelog_store=lifelog_store)
         elif use_slide:
             current_chunker = VLMChunker()
+        elif use_heading:
+            current_chunker = HeadingPromptChunker()
         else:
             current_chunker = LumberChunker()
 
