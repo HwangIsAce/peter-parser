@@ -6,6 +6,11 @@ from typing import List, Optional, Dict, Any
 from peter_parser_core import ParsedDocument
 from peter_parser_core.common.types import Chunk, ChunkMetadata
 from peter_parser.common.config import Config
+from peter_parser.common.prompt_store import (
+    get_prompt,
+    PROMPT_KEY_VLM_BOUNDARY_SYSTEM,
+    PROMPT_KEY_VLM_BOUNDARY_USER,
+)
 from peter_parser.impl.extractor.structured import StructuredLLM
 from peter_parser.prompts.chunking import (
     BOUNDARY_DETECTION_SYSTEM_PROMPT,
@@ -68,17 +73,19 @@ class VLMChunker:
                 if meta is not None:
                     metadata_lines.append(f"  page {page_index}: {meta}")
         metadata_str = "\n".join(metadata_lines) if metadata_lines else "No metadata"
-        
-        instruction = BOUNDARY_DETECTION_USER_PROMPT.format(
+
+        system_prompt = get_prompt(PROMPT_KEY_VLM_BOUNDARY_SYSTEM) or BOUNDARY_DETECTION_SYSTEM_PROMPT
+        user_prompt_template = get_prompt(PROMPT_KEY_VLM_BOUNDARY_USER) or BOUNDARY_DETECTION_USER_PROMPT
+        instruction = user_prompt_template.format(
             document_summary=document_summary or "No summary",
             item_metadata=metadata_str,
             chunk_unit="page",
             total_items=total_pages
         )
-        
+
         result = self.llm.structure_output(
             instruction=instruction,
-            user_system_prompt=BOUNDARY_DETECTION_SYSTEM_PROMPT,
+            user_system_prompt=system_prompt,
             key_attr="name",
             value_attr="description"
         )
