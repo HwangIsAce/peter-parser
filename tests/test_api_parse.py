@@ -136,3 +136,27 @@ def test_mapper_chunk_to_result_item():
     assert item.chunk == "Text."
     assert item.chunk_order == 0
     assert item.metadata.doc_page == [1, 2]
+
+
+def test_mapper_heading_path_to_category():
+    """Chunk with extra.heading_path maps to ResultItem metadata.category (heading docs)."""
+    from peter_parser.api.schemas.mappers import chunk_to_result_item
+    from peter_parser_core.common.types import Chunk, ChunkMetadata
+
+    c = Chunk(
+        uuid="u2",
+        doc_title="Report",
+        chunk="Section content.",
+        chunk_order=0,
+        metadata=ChunkMetadata(
+            chunk_size=17,
+            extra={
+                "heading1": "제1장",
+                "heading2": "1.1 절",
+                "heading3": "",
+                "heading_path": ["제1장", "1.1 절"],
+            },
+        ),
+    )
+    item = chunk_to_result_item(c)
+    assert item.metadata.category == ["제1장", "1.1 절"]

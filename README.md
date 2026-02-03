@@ -7,7 +7,7 @@ Document processing pipeline with optimized modules.
 1. **parse** — Document (PDF, etc.) is parsed into a structured `ParsedDocument`.
 2. **route** — Document type is set: either from `invoke(document_type=...)` or by an LLM router that classifies the content.
 3. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` → **chunk** directly.
-4. **chunk** — Chunking by document type: LumberChunker (heading/plain), VLMChunker (slide), LifelogChunker (lifelog).
+4. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog).
 5. **chunk_enrich** — Chunk-level metadata (summary, keywords).
 6. **export** — Chunks are serialized to JSON in `state["export_json"]`.
 
@@ -19,6 +19,16 @@ Document processing pipeline with optimized modules.
 | `plain`   | Unstructured text (notes, blog body)              | chunk            |
 | `slide`   | Presentation / slide deck                        | enrich → chunk   |
 | `lifelog` | 5W1H event-style daily log                       | chunk (LifelogChunker) |
+
+## Heading chunking (heading documents)
+
+For **heading** documents, the chunk stage uses **HeadingPromptChunker**: content is processed in windows of up to **10 pages** (configurable via `HEADING_CHUNK_MAX_PAGES`). An LLM identifies heading1 / heading2 / heading3 and outputs chunk boundaries by segment (element) index.
+
+- **Input:** Parsed document with `elements` and `pages`; no prior enrichment.
+- **Output:** Chunks with element-based boundaries. Each chunk’s `metadata.extra` includes:
+  - `heading1`, `heading2`, `heading3` — current heading titles (empty string if absent).
+  - `heading_path` — list of non-empty headings, e.g. `["Chapter 1", "1.1 Section"]`.
+- **API:** When `heading_path` is present, it is exposed as `ResultItem.metadata.category` so clients can use the heading hierarchy for navigation or filtering.
 
 ## Dynamic prompt optimization (slide / VLMChunker only)
 
