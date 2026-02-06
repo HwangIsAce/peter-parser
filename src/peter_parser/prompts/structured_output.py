@@ -10,6 +10,7 @@ Please refer to the below following <REQUIREMENT></REQUIREMENT>, <FORMAT></FORMA
     - When you export the result, you NEVER include the other description or explanation, especially XML Tag form like <TAG></TAG>.
     - The answer must not be include triple backticks() in the result.
     - Output must be a single JSON object. Each key in <FORMAT> must map directly to its value (e.g. "title": "some string", "key_points": ["a", "b"]). Do NOT wrap values in nested objects like {{"value": ..., "annotation": ...}}.
+    - Output must be valid, parseable JSON. Inside string values, escape any double quote as \\", or avoid using double quotes in string values.
 </REQUIREMENT>
 <FORMAT>
 {structure_information}
