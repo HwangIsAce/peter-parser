@@ -58,6 +58,11 @@ class Config:
 
     # LLM Router (document-type classification)
     ROUTER_CONTENT_MAX_CHARS: int = int(os.getenv("ROUTER_CONTENT_MAX_CHARS", "6000"))
+    # Router mode: "llm" = parsed text only (fast), "vlm" = page images (legacy)
+    ROUTER_MODE: str = os.getenv("ROUTER_MODE", "llm").lower()  # llm | vlm
+    # LLM Router: sample up to N pages of text from parsed_document
+    ROUTER_LLM_MAX_PAGES: int = int(os.getenv("ROUTER_LLM_MAX_PAGES", "5"))
+    ROUTER_LLM_PAGE_SAMPLE: str = os.getenv("ROUTER_LLM_PAGE_SAMPLE", "random")  # random | uniform
     # VLM Router (sample pages from document for classification)
     ROUTER_VLM_MAX_PAGES: int = int(os.getenv("ROUTER_VLM_MAX_PAGES", "4"))
     ROUTER_VLM_PAGE_SAMPLE: str = os.getenv("ROUTER_VLM_PAGE_SAMPLE", "uniform")  # uniform | random
