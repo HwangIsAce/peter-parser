@@ -1,6 +1,7 @@
 """Route node: set document_type via VLM (page images) or LLM (text) when not already provided."""
 from __future__ import annotations
 
+import sys
 from typing import Any, Callable, Optional
 
 from peter_parser_core import ParsedDocument
@@ -21,6 +22,8 @@ def create_route_node(
     _vlm_router = vlm_router or VLMRouter()
 
     def route_node(state: PipelineState) -> dict[str, Any]:
+        if Config.PIPELINE_PROGRESS:
+            print("[Pipeline] Step: route (VLM/LLM document-type)...", file=sys.stderr, flush=True)
         if state.get("document_type") is not None:
             return {}
         parsed: Optional[ParsedDocument] = state.get("parsed_document")

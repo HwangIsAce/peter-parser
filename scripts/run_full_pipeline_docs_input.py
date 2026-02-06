@@ -31,6 +31,9 @@ EXPECTED_ORDER: list[str] = ["heading", "slide", "lifelog"]
 
 
 def main() -> None:
+    import os
+    os.environ.setdefault("PIPELINE_PROGRESS", "1")  # show step progress during test
+
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser.common.config import Config
 

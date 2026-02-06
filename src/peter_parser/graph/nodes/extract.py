@@ -1,7 +1,9 @@
 """Extract node implementation."""
+import sys
 from typing import Any, Callable, Dict, Optional
 
 from peter_parser_core import ParsedDocument
+from peter_parser.common.config import Config
 from peter_parser.graph.states import (
     PipelineState,
     DOCUMENT_TYPE_SLIDE,
@@ -24,6 +26,8 @@ def create_extract_node(
         Note: This does NOT modify parsed_document. Enrichment data is returned
         separately and linked via keys (document_summary, item_metadata).
         """
+        if Config.PIPELINE_PROGRESS:
+            print("[Pipeline] Step: enrich (document summary + page metadata)...", file=sys.stderr, flush=True)
         parsed_doc = state.get("parsed_document")
         if not parsed_doc:
             raise ValueError("parsed_document is required")
@@ -66,6 +70,10 @@ def create_chunk_enrich_node(
         
         Does NOT modify chunks. Returns chunk_metadata separately, linked by chunk_order.
         """
+        if Config.PIPELINE_PROGRESS:
+            chunks_preview = state.get("chunks", [])
+            n = len(chunks_preview)
+            print(f"[Pipeline] Step: chunk_enrich ({n} chunks, LLM summary+keywords)...", file=sys.stderr, flush=True)
         chunks = state.get("chunks", [])
         if not chunks:
             return {}

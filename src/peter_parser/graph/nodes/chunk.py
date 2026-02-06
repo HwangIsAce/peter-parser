@@ -1,6 +1,8 @@
 """Chunk node implementation."""
+import sys
 from typing import Any, Callable, Dict, Optional
 
+from peter_parser.common.config import Config
 from peter_parser.graph.states import (
     PipelineState,
     DOCUMENT_TYPE_HEADING,
@@ -13,7 +15,6 @@ from peter_parser.impl.chunker.lumber import LumberChunker
 from peter_parser.impl.chunker.lifelog import LifelogChunker
 from peter_parser.impl.chunker.heading import HeadingPromptChunker
 from peter_parser.impl.db.lifelog_store import LifelogStore
-from peter_parser.common.config import Config
 
 def create_chunk_node(
     chunker: Optional[Any] = None,
@@ -28,6 +29,11 @@ def create_chunk_node(
     """
     def chunk_node(state: PipelineState) -> Dict[str, Any]:
         """Chunk node function for langgraph."""
+        if Config.PIPELINE_PROGRESS:
+            dt = state.get("document_type")
+            cu = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
+            mode = "lifelog" if (dt == DOCUMENT_TYPE_LIFELOG or cu == "lifelog") else ("slide" if dt == DOCUMENT_TYPE_SLIDE else ("heading" if dt == DOCUMENT_TYPE_HEADING else "plain"))
+            print(f"[Pipeline] Step: chunk (mode={mode}, LLM per event/page)...", file=sys.stderr, flush=True)
         parsed_document = state.get("parsed_document")
         if not parsed_document:
             raise ValueError("parsed_document is required")

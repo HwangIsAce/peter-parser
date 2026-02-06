@@ -63,6 +63,9 @@ class Config:
     ROUTER_VLM_PAGE_SAMPLE: str = os.getenv("ROUTER_VLM_PAGE_SAMPLE", "uniform")  # uniform | random
     ROUTER_FEWSHOT_DIR: str = os.getenv("ROUTER_FEWSHOT_DIR", "")  # default: assets/router_fewshot
 
+    # Pipeline progress (print current step to stderr; set to 1 for tests/debug)
+    PIPELINE_PROGRESS: bool = os.getenv("PIPELINE_PROGRESS", "0").lower() in ("1", "true", "yes")
+
     # RQ / Redis (async parse jobs)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")

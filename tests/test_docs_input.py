@@ -89,6 +89,8 @@ def test_route_node_with_docs_input_pdf():
 @pytest.mark.timeout(600)
 def test_full_pipeline_docs_input_one_pdf():
     """Full pipeline (parse → route → chunk → …) with one docs/input PDF. Requires API keys."""
+    import os
+    os.environ["PIPELINE_PROGRESS"] = "1"
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser.common.config import Config
 
@@ -111,6 +113,8 @@ def test_full_pipeline_docs_input_one_pdf():
 
 def _run_full_pipeline_for_one_pdf(pdf_index: int) -> None:
     """Run full pipeline for a single PDF at docs/input (by sorted index)."""
+    import os
+    os.environ["PIPELINE_PROGRESS"] = "1"
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser.common.config import Config
 

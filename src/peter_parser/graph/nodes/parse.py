@@ -1,7 +1,9 @@
 """Parse node implementation."""
+import sys
 from typing import Any, Callable
 
 from peter_parser_core import BaseParser, ParserError, ParsedDocument
+from peter_parser.common.config import Config
 from peter_parser_core.common.types import ContentModel
 
 from peter_parser.graph.states import PipelineState
@@ -26,6 +28,8 @@ def create_parser_node(parser: BaseParser) -> Callable[[PipelineState], dict[str
             partial state with parsed_document
         """
         
+        if Config.PIPELINE_PROGRESS:
+            print("[Pipeline] Step: parse (Upstage API)...", file=sys.stderr, flush=True)
         document = state["document"]
         
         try:
