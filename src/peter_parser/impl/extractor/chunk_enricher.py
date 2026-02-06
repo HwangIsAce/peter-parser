@@ -1,5 +1,6 @@
 """Chunk metadata enrichment extractor."""
-from typing import Dict, Any, List, Optional
+import asyncio
+from typing import Dict, Any, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from peter_parser.impl.extractor.structured import StructuredLLM
@@ -46,22 +47,30 @@ class ChunkEnricher:
             return {}
         return self.llm._run_async(self._enrich_chunks_async(chunks))
 
+    async def _enrich_one(
+        self,
+        semaphore: asyncio.Semaphore,
+        chunk: Chunk,
+    ) -> Tuple[int, Dict[str, Any]]:
+        """Enrich a single chunk; semaphore limits concurrency. Returns (chunk_order, metadata)."""
+        async with semaphore:
+            result = await self.llm.astructure_output(
+                instruction=f"Extract key information from this chunk:\n\n{chunk.chunk[:2000]}",
+                key_attr="name",
+                value_attr="description",
+            )
+            return (
+                chunk.chunk_order,
+                {"summary": result.summary, "keywords": result.keywords},
+            )
+
     async def _enrich_chunks_async(
         self,
         chunks: List[Chunk],
     ) -> Dict[int, Dict[str, Any]]:
-        """Run all chunk enrichment requests in one event loop."""
-        chunk_metadata: Dict[int, Dict[str, Any]] = {}
-        for chunk in chunks:
-            chunk_idx = chunk.chunk_order
-            chunk_text = chunk.chunk
-            result = await self.llm.astructure_output(
-                instruction=f"Extract key information from this chunk:\n\n{chunk_text[:2000]}",
-                key_attr="name",
-                value_attr="description",
-            )
-            chunk_metadata[chunk_idx] = {
-                "summary": result.summary,
-                "keywords": result.keywords,
-            }
-        return chunk_metadata
+        """Run chunk enrichment in parallel with semaphore; order preserved via gather."""
+        max_concurrency = max(1, getattr(Config, "CHUNK_ENRICH_MAX_CONCURRENCY", 5))
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [self._enrich_one(semaphore, ch) for ch in chunks]
+        results: List[Tuple[int, Dict[str, Any]]] = await asyncio.gather(*tasks)
+        return dict(results)
