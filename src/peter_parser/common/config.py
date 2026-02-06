@@ -3,8 +3,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-env_path = Path(__file__).parent.parent.parent.parent / ".env"
-load_dotenv(env_path)
+# .env: 프로젝트 루트(이 파일 기준 4단계 상위)에서 로드. 없으면 cwd 기준으로도 시도.
+_env_dir = Path(__file__).resolve().parent.parent.parent.parent
+_env_path = _env_dir / ".env"
+if _env_path.is_file():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()  # cwd 또는 상위 디렉터리에서 .env 탐색
 
 class Config:
     """Application configuration."""

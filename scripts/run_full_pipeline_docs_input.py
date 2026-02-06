@@ -38,6 +38,12 @@ def main() -> None:
         print("ERROR: UPSTAGE_API_KEY not set. Set it in .env or environment.")
         sys.exit(1)
 
+    # 요청이 나갈 서버 확인용 (Connection error 시 여기서 URL/키 확인)
+    llm_url = Config.OPENAI_BASE_URL or "(비어있음 → 기본 OpenAI)"
+    vlm_url = Config.OPENAI_VISION_BASE_URL or "(비어있음 → LLM과 동일)"
+    print(f"LLM URL: {llm_url[:50]}..." if len(str(llm_url)) > 50 else f"LLM URL: {llm_url}")
+    print(f"VLM URL: {vlm_url[:50]}..." if len(str(vlm_url)) > 50 else f"VLM URL: {vlm_url}")
+
     pdfs = sorted(DOCS_INPUT.glob("*.pdf"))
     if not pdfs:
         print(f"No PDFs found in {DOCS_INPUT}")
