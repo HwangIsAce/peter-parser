@@ -1,10 +1,11 @@
 """Lumber chunker implementation (production)."""
 
+import asyncio
 import uuid
 from pydantic import BaseModel, Field
 from peter_parser.impl.extractor.structured import StructuredLLM
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from peter_parser.common.utils import split_sentences, segment_to_element_boundaries
 from peter_parser_core import ParsedDocument
@@ -30,6 +31,40 @@ class LumberChunker:
         if llm is None:
             llm = StructuredLLM(datamodel=SectionBoundaries)
         self.llm = llm
+
+    async def _process_one_section(
+        self,
+        semaphore: asyncio.Semaphore,
+        start_idx: int,
+        section_el: List[Any],
+        section_text: str,
+        language: str,
+    ) -> List[int]:
+        """Process one section; returns list of global boundary indices."""
+        async with semaphore:
+            segments = split_sentences(section_text, language)
+            if len(segments) <= 1:
+                return []
+            id_segments = [f"ID {k}: {s}" for k, s in enumerate(segments)]
+            document = "\n".join(id_segments)
+            page_num = section_el[0].page_number if section_el else 1
+            instruction = LUMBER_SECTION_PROMPT.format(
+                page_number=page_num,
+                document=document,
+            )
+            try:
+                result = await self.llm.astructure_output(
+                    instruction=instruction,
+                    user_system_prompt=LUMBER_SYSTEM_PROMPT,
+                    key_attr="name",
+                    value_attr="description",
+                )
+                seg_b = [b for b in result.boundaries if 0 < b < len(segments)]
+                seg_b = sorted(list(set(seg_b)))
+            except Exception:
+                seg_b = []
+            el_b = segment_to_element_boundaries(section_el, segments, seg_b, language)
+            return [start_idx + eb for eb in el_b]
 
     def detect_boundaries(
         self,
@@ -65,38 +100,32 @@ class LumberChunker:
                 sections.append((start_idx, end_idx, indices))
             i += pages_per_section
 
-        all_boundaries: List[int] = []
+        # Build tasks for sections with content
+        tasks_data: List[Tuple[int, List[Any], str]] = []
         for start_idx, end_idx, _ in sections:
             section_el = elements[start_idx:end_idx]
             section_text = "\n".join([el.text for el in section_el if el.text])
             if not section_text.strip():
                 continue
-            segments = split_sentences(section_text, language)
-            if len(segments) <= 1:
-                continue
+            tasks_data.append((start_idx, section_el, section_text))
 
-            id_segments = [f"ID {k}: {s}" for k, s in enumerate(segments)]
-            document = "\n".join(id_segments)
-            page_num = section_el[0].page_number if section_el else 1
-            instruction = LUMBER_SECTION_PROMPT.format(
-                page_number=page_num,
-                document=document,
-            )
-            try:
-                result = self.llm.structure_output(
-                    instruction=instruction,
-                    user_system_prompt=LUMBER_SYSTEM_PROMPT,
-                    key_attr="name",
-                    value_attr="description",
-                )
-                seg_b = [b for b in result.boundaries if 0 < b < len(segments)]
-                seg_b = sorted(list(set(seg_b)))
-            except Exception:
-                seg_b = []
-            el_b = segment_to_element_boundaries(section_el, segments, seg_b, language)
-            for eb in el_b:
-                all_boundaries.append(start_idx + eb)
+        if not tasks_data:
+            return []
 
+        max_concurrency = max(1, getattr(Config, "CHUNKER_LLM_MAX_CONCURRENCY", 5))
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [
+            self._process_one_section(semaphore, start_idx, section_el, section_text, language)
+            for start_idx, section_el, section_text in tasks_data
+        ]
+
+        async def _gather_all():
+            return await asyncio.gather(*tasks)
+
+        results_list: List[List[int]] = self.llm._run_async(_gather_all())
+        all_boundaries: List[int] = []
+        for boundaries in results_list:
+            all_boundaries.extend(boundaries)
         return sorted(list(set(all_boundaries)))
     
     def chunk(

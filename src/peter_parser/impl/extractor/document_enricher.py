@@ -1,7 +1,8 @@
 """Document enrichment extractor."""
+import asyncio
 from pydantic import BaseModel, Field
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from peter_parser_core import ParsedDocument
 from peter_parser.impl.extractor.structured import StructuredLLM
@@ -85,7 +86,36 @@ class DocumentEnricher:
                     image_data.append(base64.b64decode(img.data))
         
         return image_data if image_data else None
-    
+
+    async def _enrich_one_page(
+        self,
+        semaphore: asyncio.Semaphore,
+        page: Any,
+        page_images: Optional[List[bytes]],
+    ) -> Tuple[int, Dict[str, Any]]:
+        """Enrich a single page; returns (page_number, page_meta)."""
+        async with semaphore:
+            page_meta = None
+            try:
+                if page_images:
+                    script_result = await self.vlm.astructure_output(
+                        instruction=PAGE_SCRIPT_PROMPT,
+                        images=page_images,
+                        key_attr="name",
+                        value_attr="description",
+                    )
+                else:
+                    script_result = await self.llm.astructure_output(
+                        instruction=f"{PAGE_SCRIPT_PROMPT}\n\n<SLIDE_TEXT>\n{getattr(page, 'text', '') or ''}\n</SLIDE_TEXT>",
+                        key_attr="name",
+                        value_attr="description",
+                        datamodel=PageScript,
+                    )
+                page_meta = {"title": script_result.title, "script": script_result.script or ""}
+            except Exception:
+                page_meta = {"title": None, "script": (getattr(page, "text", None) or "")[:2000]}
+            return (page.page_number, page_meta)
+
     def enrich(
         self,
         parsed_document: ParsedDocument,
@@ -134,38 +164,28 @@ class DocumentEnricher:
         )
         document_summary = summary_result.summary
         
-        # 2. Page metadata (VLM per page if images available, else LLM)
-        # Store as item_metadata with element_id as key (link to original elements).
-        # Same page -> same metadata; assign to each element on that page.
+        # 2. Page metadata (VLM/LLM per page, parallel)
         item_metadata = {}
         if chunk_unit == "page" and hasattr(parsed_document, "elements") and parsed_document.elements:
-            for page in parsed_document.pages:
-                page_number = page.page_number
-                page_images = self._get_page_images(parsed_document, page_number)
-                page_meta = None
-                try:
-                    if page_images:
-                        script_result = self.vlm.structure_output(
-                            instruction=PAGE_SCRIPT_PROMPT,
-                            images=page_images,
-                            key_attr="name",
-                            value_attr="description"
-                        )
-                    else:
-                        script_result = self.llm.structure_output(
-                            instruction=f"{PAGE_SCRIPT_PROMPT}\n\n<SLIDE_TEXT>\n{page.text}\n</SLIDE_TEXT>",
-                            key_attr="name",
-                            value_attr="description",
-                            datamodel=PageScript,
-                        )
-                    page_meta = {"title": script_result.title, "script": script_result.script or ""}
-                except Exception:
-                    # LLM/VLM returned wrong schema or invalid JSON; use page text as fallback
-                    page_meta = {"title": None, "script": (getattr(page, "text", None) or "")[:2000]}
-                if page_meta:
-                    for el in parsed_document.elements:
-                        if el.page_number == page_number:
-                            item_metadata[el.element_id] = page_meta
+            max_concurrency = max(1, getattr(Config, "DOCUMENT_ENRICH_MAX_CONCURRENCY", 5))
+            semaphore = asyncio.Semaphore(max_concurrency)
+            pages_with_images = [
+                (page, self._get_page_images(parsed_document, page.page_number))
+                for page in parsed_document.pages
+            ]
+            tasks = [
+                self._enrich_one_page(semaphore, page, imgs)
+                for page, imgs in pages_with_images
+            ]
+
+            async def _gather_all():
+                return await asyncio.gather(*tasks)
+
+            results: List[Tuple[int, Dict[str, Any]]] = self.llm._run_async(_gather_all())
+            for page_number, page_meta in results:
+                for el in parsed_document.elements:
+                    if el.page_number == page_number:
+                        item_metadata[el.element_id] = page_meta
         
         # Return enrichment data separately (linked, not attached to ParsedDocument)
         return {

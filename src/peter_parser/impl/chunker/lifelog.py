@@ -1,12 +1,14 @@
 """Lifelog chunker: 5W1H event-unit chunking + entity extraction + JanusGraph."""
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from peter_parser.common.config import Config
 from peter_parser_core import ParsedDocument
 from peter_parser_core.common.types import Chunk, ChunkMetadata, ContentModel
 
@@ -83,6 +85,41 @@ class LifelogChunker:
             return []
         return list(range(1, len(evs)))
 
+    async def _extract_entities_one(
+        self, semaphore: asyncio.Semaphore, ev: LifelogEvent, idx: int
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        """Extract entities for one event; returns (idx, entities)."""
+        async with semaphore:
+            instruction = LIFELOG_ENTITY_EXTRACTION.format(
+                when=ev.when,
+                who=ev.who,
+                what=ev.what,
+                where=ev.where,
+                why_how=ev.why_how,
+                description=ev.description,
+            )
+            try:
+                out = await self.llm.astructure_output(
+                    instruction=instruction,
+                    user_system_prompt=LIFELOG_ENTITY_SYSTEM,
+                    datamodel=_LifelogEntitiesOut,
+                    key_attr="name",
+                    value_attr="description",
+                )
+            except Exception:
+                out = _LifelogEntitiesOut(entities=[])
+            entities: List[Dict[str, Any]] = []
+            for e in out.entities or []:
+                c = (e.canonical_text or "").strip()
+                if not c:
+                    continue
+                entities.append({
+                    "canonical": c,
+                    "original": (e.original_text or c).strip(),
+                    "type": (e.type or "other").strip(),
+                })
+            return (idx, entities)
+
     def chunk(
         self,
         parsed_document: ParsedDocument,
@@ -94,36 +131,19 @@ class LifelogChunker:
         doc_title = doc_title or getattr(parsed_document, "title", None) or ""
         chunks: List[Chunk] = []
 
-        for i, ev in enumerate(events):
-            instruction = LIFELOG_ENTITY_EXTRACTION.format(
-                when=ev.when,
-                who=ev.who,
-                what=ev.what,
-                where=ev.where,
-                why_how=ev.why_how,
-                description=ev.description,
-            )
-            try:
-                out = self.llm.structure_output(
-                    instruction=instruction,
-                    user_system_prompt=LIFELOG_ENTITY_SYSTEM,
-                    datamodel=_LifelogEntitiesOut,
-                    key_attr="name",
-                    value_attr="description",
-                )
-            except Exception:
-                out = _LifelogEntitiesOut(entities=[])
+        # Parallel entity extraction (gather inside _run_async to avoid event loop binding issues)
+        max_concurrency = max(1, getattr(Config, "CHUNKER_LLM_MAX_CONCURRENCY", 5))
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [self._extract_entities_one(semaphore, ev, i) for i, ev in enumerate(events)]
 
-            entities: List[Dict[str, Any]] = []
-            for e in out.entities or []:
-                c = (e.canonical_text or "").strip()
-                if not c:
-                    continue
-                entities.append({
-                    "canonical": c,
-                    "original": (e.original_text or c).strip(),
-                    "type": (e.type or "other").strip(),
-                })
+        async def _gather_all() -> List[Tuple[int, List[Dict[str, Any]]]]:
+            return await asyncio.gather(*tasks)
+
+        results_list: List[Tuple[int, List[Dict[str, Any]]]] = self.llm._run_async(_gather_all())
+        entities_by_idx = {idx: ents for idx, ents in results_list}
+
+        for i, ev in enumerate(events):
+            entities = entities_by_idx.get(i, [])
 
             day = _ev_to_day(ev)
             event_uuid = str(uuid.uuid4())

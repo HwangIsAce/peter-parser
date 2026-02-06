@@ -1,6 +1,7 @@
 """Heading prompt-based chunker: 10-page windows, heading1/2/3 structure."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -118,9 +119,35 @@ class HeadingPromptChunker:
         self.llm = llm
         self._last_heading_infos: List[Dict[str, Any]] = []
 
+    async def _process_one_window(
+        self,
+        semaphore: asyncio.Semaphore,
+        win_idx: int,
+        global_start: int,
+        text: str,
+        max_pages: int,
+    ) -> Tuple[int, int, List[int], List[Dict[str, Any]]]:
+        """Process one window; returns (win_idx, global_start, local_b, infos)."""
+        async with semaphore:
+            try:
+                result = await self.llm.astructure_output(
+                    instruction=HEADING_CHUNK_USER_PROMPT.format(
+                        max_pages=max_pages,
+                        text=text,
+                    ),
+                    user_system_prompt=HEADING_CHUNK_SYSTEM_PROMPT,
+                    key_attr="name",
+                    value_attr="description",
+                )
+            except Exception:
+                result = HeadingChunksOutput(chunks=[])
+            local_b = sorted(set(c.start_index for c in result.chunks if c.start_index > 0))
+            infos = _heading_infos_from_items(result.chunks)
+            return (win_idx, global_start, local_b, infos)
+
     def detect_boundaries(self, parsed_document: ParsedDocument) -> List[int]:
         """
-        Run LLM per window (element-based); return global element boundaries and set _last_heading_infos.
+        Run LLM per window (element-based, parallel); return global element boundaries and set _last_heading_infos.
         """
         pages = getattr(parsed_document, "pages", None) or []
         elements = getattr(parsed_document, "elements", None) or []
@@ -129,8 +156,9 @@ class HeadingPromptChunker:
             return []
         max_pages = Config.HEADING_CHUNK_MAX_PAGES
         windows = build_heading_windows(pages, max_pages)
-        all_boundaries: List[int] = []
-        all_heading_infos: List[Dict[str, Any]] = []
+
+        # Build tasks for windows with content
+        tasks_data: List[Tuple[int, int, str]] = []
         for win_idx, (page_start, page_end, _) in enumerate(windows):
             global_indices, window_elements = _elements_in_page_range(
                 elements, page_start, page_end
@@ -143,25 +171,33 @@ class HeadingPromptChunker:
             )
             if not text.strip():
                 continue
-            instruction = HEADING_CHUNK_USER_PROMPT.format(
-                max_pages=max_pages,
-                text=text,
-            )
-            try:
-                result = self.llm.structure_output(
-                    instruction=instruction,
-                    user_system_prompt=HEADING_CHUNK_SYSTEM_PROMPT,
-                    key_attr="name",
-                    value_attr="description",
-                )
-            except Exception:
-                result = HeadingChunksOutput(chunks=[])
-            local_b = sorted(set(c.start_index for c in result.chunks if c.start_index > 0))
+            tasks_data.append((win_idx, global_start, text))
+
+        if not tasks_data:
+            self._last_heading_infos = []
+            return []
+
+        max_concurrency = max(1, getattr(Config, "CHUNKER_LLM_MAX_CONCURRENCY", 5))
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [
+            self._process_one_window(semaphore, win_idx, global_start, text, max_pages)
+            for win_idx, global_start, text in tasks_data
+        ]
+
+        async def _gather_all():
+            return await asyncio.gather(*tasks)
+
+        results: List[Tuple[int, int, List[int], List[Dict[str, Any]]]] = self.llm._run_async(
+            _gather_all()
+        )
+
+        all_boundaries: List[int] = []
+        all_heading_infos: List[Dict[str, Any]] = []
+        for win_idx, global_start, local_b, infos in results:
             if win_idx > 0:
                 all_boundaries.append(global_start)
             for b in local_b:
                 all_boundaries.append(global_start + b)
-            infos = _heading_infos_from_items(result.chunks)
             all_heading_infos.extend(infos)
         self._last_heading_infos = all_heading_infos
         return sorted(list(set(all_boundaries)))

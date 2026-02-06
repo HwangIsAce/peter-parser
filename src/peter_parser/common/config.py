@@ -44,6 +44,8 @@ class Config:
     DEFAULT_CHUNK_UNIT: str = os.getenv("DEFAULT_CHUNK_UNIT", "element")  # "page" or "element"
     CHUNK_MAX_CONTENT_LENGTH: int = int(os.getenv("CHUNK_MAX_CONTENT_LENGTH", "10000"))  # For document summary
     CHUNK_ENRICH_MAX_CONCURRENCY: int = int(os.getenv("CHUNK_ENRICH_MAX_CONCURRENCY", "5"))  # Max concurrent LLM calls per document
+    DOCUMENT_ENRICH_MAX_CONCURRENCY: int = int(os.getenv("DOCUMENT_ENRICH_MAX_CONCURRENCY", "5"))  # Max concurrent VLM/LLM per page
+    CHUNKER_LLM_MAX_CONCURRENCY: int = int(os.getenv("CHUNKER_LLM_MAX_CONCURRENCY", "5"))  # Max concurrent LLM in Lifelog/Heading/Lumber
     
     # Lumber-based Chunking Configuration (plain docs: section = page)
     LUMBER_LANGUAGE_DEFAULT: str = os.getenv("LUMBER_LANGUAGE_DEFAULT", "ko")

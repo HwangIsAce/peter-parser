@@ -1,7 +1,8 @@
 """Tests for lifelog chunking and entity store."""
+import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import AsyncMock, Mock, MagicMock, patch
 from typing import List
 
 project_root = Path(__file__).parent.parent
@@ -194,21 +195,24 @@ def test_lifelog_chunker_detect_boundaries_single():
 def test_lifelog_chunker_chunk_with_mock_llm():
     """Test chunking with mock LLM."""
     mock_llm = Mock()
-    mock_llm.structure_output.return_value = _LifelogEntitiesOut(
-        entities=[
-            _EntityExtraction(
-                canonical_text="식사",
-                original_text="밥",
-                type="food",
-            ),
-            _EntityExtraction(
-                canonical_text="집",
-                original_text="집",
-                type="location",
-            ),
-        ]
+    mock_llm.astructure_output = AsyncMock(
+        return_value=_LifelogEntitiesOut(
+            entities=[
+                _EntityExtraction(
+                    canonical_text="식사",
+                    original_text="밥",
+                    type="food",
+                ),
+                _EntityExtraction(
+                    canonical_text="집",
+                    original_text="집",
+                    type="location",
+                ),
+            ]
+        )
     )
-    
+    mock_llm._run_async = lambda coro: asyncio.run(coro)
+
     chunker = LifelogChunker(llm=mock_llm, lifelog_store=None)
     parsed_doc = create_mock_lifelog_parsed_document()
     boundaries = chunker.detect_boundaries(parsed_doc)
@@ -236,16 +240,19 @@ def test_lifelog_chunker_chunk_with_mock_llm():
 def test_lifelog_chunker_chunk_with_store():
     """Test chunking with mock store."""
     mock_llm = Mock()
-    mock_llm.structure_output.return_value = _LifelogEntitiesOut(
-        entities=[
-            _EntityExtraction(
-                canonical_text="식사",
-                original_text="밥",
-                type="food",
-            ),
-        ]
+    mock_llm.astructure_output = AsyncMock(
+        return_value=_LifelogEntitiesOut(
+            entities=[
+                _EntityExtraction(
+                    canonical_text="식사",
+                    original_text="밥",
+                    type="food",
+                ),
+            ]
+        )
     )
-    
+    mock_llm._run_async = lambda coro: asyncio.run(coro)
+
     mock_store = Mock()
     mock_store.save_event = Mock()
     
