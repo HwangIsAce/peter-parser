@@ -142,23 +142,30 @@ class DocumentEnricher:
             for page in parsed_document.pages:
                 page_number = page.page_number
                 page_images = self._get_page_images(parsed_document, page_number)
-                if page_images:
-                    script_result = self.vlm.structure_output(
-                        instruction=PAGE_SCRIPT_PROMPT,
-                        images=page_images,
-                        key_attr="name",
-                        value_attr="description"
-                    )
-                else:
-                    script_result = self.llm.structure_output(
-                        instruction=f"{PAGE_SCRIPT_PROMPT}\n\n<SLIDE_TEXT>\n{page.text}\n</SLIDE_TEXT>",
-                        key_attr="name",
-                        value_attr="description"
-                    )
-                page_meta = {"title": script_result.title, "script": script_result.script}
-                for el in parsed_document.elements:
-                    if el.page_number == page_number:
-                        item_metadata[el.element_id] = page_meta
+                page_meta = None
+                try:
+                    if page_images:
+                        script_result = self.vlm.structure_output(
+                            instruction=PAGE_SCRIPT_PROMPT,
+                            images=page_images,
+                            key_attr="name",
+                            value_attr="description"
+                        )
+                    else:
+                        script_result = self.llm.structure_output(
+                            instruction=f"{PAGE_SCRIPT_PROMPT}\n\n<SLIDE_TEXT>\n{page.text}\n</SLIDE_TEXT>",
+                            key_attr="name",
+                            value_attr="description",
+                            datamodel=PageScript,
+                        )
+                    page_meta = {"title": script_result.title, "script": script_result.script or ""}
+                except Exception:
+                    # LLM/VLM returned wrong schema or invalid JSON; use page text as fallback
+                    page_meta = {"title": None, "script": (getattr(page, "text", None) or "")[:2000]}
+                if page_meta:
+                    for el in parsed_document.elements:
+                        if el.page_number == page_number:
+                            item_metadata[el.element_id] = page_meta
         
         # Return enrichment data separately (linked, not attached to ParsedDocument)
         return {

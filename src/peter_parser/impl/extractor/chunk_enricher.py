@@ -31,32 +31,37 @@ class ChunkEnricher:
         chunks: List[Chunk],
     ) -> Dict[int, Dict[str, Any]]:
         """Enrich chunks with metadata.
-        
+
         Does NOT modify chunks. Returns metadata separately, linked by chunk_order.
-        
+        Runs all LLM calls in a single event loop to avoid Connection errors when
+        using AsyncOpenAI with repeated asyncio.run() (one per chunk).
+
         Args:
             chunks: List of Chunk objects (read-only, not modified)
-        
+
         Returns:
             Dict mapping chunk_order to metadata {summary, keywords}
         """
-        chunk_metadata = {}
-        
+        if not chunks:
+            return {}
+        return self.llm._run_async(self._enrich_chunks_async(chunks))
+
+    async def _enrich_chunks_async(
+        self,
+        chunks: List[Chunk],
+    ) -> Dict[int, Dict[str, Any]]:
+        """Run all chunk enrichment requests in one event loop."""
+        chunk_metadata: Dict[int, Dict[str, Any]] = {}
         for chunk in chunks:
             chunk_idx = chunk.chunk_order
             chunk_text = chunk.chunk
-            
-            # Extract metadata for each chunk
-            result = self.llm.structure_output(
+            result = await self.llm.astructure_output(
                 instruction=f"Extract key information from this chunk:\n\n{chunk_text[:2000]}",
                 key_attr="name",
-                value_attr="description"
+                value_attr="description",
             )
-            
-            # Store metadata separately (linked by chunk_order, not attached to chunk)
             chunk_metadata[chunk_idx] = {
                 "summary": result.summary,
                 "keywords": result.keywords,
             }
-        
         return chunk_metadata
