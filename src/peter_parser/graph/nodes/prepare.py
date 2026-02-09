@@ -1,6 +1,7 @@
 """Prepare node: document_type별로 parsed_document 준비.
 
 - lifelog: raw text → 최소 ParsedDocument (parse 스킵)
+- excel: ExcelParser.parse() 호출 (.xlsx)
 - heading/plain/slide: Parser.parse() 호출 (Upstage)
 """
 from __future__ import annotations
@@ -13,11 +14,12 @@ from peter_parser_core.common.types import ContentModel
 
 from peter_parser.common.config import Config
 from peter_parser.graph.nodes.parse import create_parser_node
-from peter_parser.graph.states import PipelineState, DOCUMENT_TYPE_LIFELOG
+from peter_parser.graph.states import PipelineState, DOCUMENT_TYPE_LIFELOG, DOCUMENT_TYPE_EXCEL
+from peter_parser.impl.parser.excel import ExcelParser
 
 
 def create_prepare_node(parser: BaseParser) -> Callable[[PipelineState], dict[str, Any]]:
-    """Create prepare node: lifelog는 text→ParsedDocument, 그 외는 parse 노드 위임.
+    """Create prepare node: lifelog→text, excel→ExcelParser, 그 외→parse 노드 위임.
 
     Args:
         parser: heading/plain/slide용 Parser instance
@@ -26,6 +28,7 @@ def create_prepare_node(parser: BaseParser) -> Callable[[PipelineState], dict[st
         Node function for langgraph
     """
     parse_node = create_parser_node(parser)
+    excel_parser = ExcelParser()
 
     def prepare_node(state: PipelineState) -> dict[str, Any]:
         document_type = state.get("document_type") or "plain"
@@ -41,6 +44,11 @@ def create_prepare_node(parser: BaseParser) -> Callable[[PipelineState], dict[st
                 pages=[],
                 metadata={"source": "lifelog", "input_type": "text"},
             )
+            return {"parsed_document": parsed_doc}
+        elif document_type == DOCUMENT_TYPE_EXCEL:
+            if Config.PIPELINE_PROGRESS:
+                print("[Pipeline] Step: prepare (excel, ExcelParser)...", file=sys.stderr, flush=True)
+            parsed_doc = excel_parser.parse(document)
             return {"parsed_document": parsed_doc}
         else:
             return parse_node(state)

@@ -7,13 +7,14 @@ from peter_parser_core import ParsedDocument
 from peter_parser_core.common.types import Chunk
 
 # 4-case routing: LLM or caller sets one of these.
-DocumentType = Literal["heading", "plain", "slide", "lifelog"]
+DocumentType = Literal["heading", "plain", "slide", "lifelog", "excel"]
 
 # Routing constants (for use in flow/chunk nodes).
 DOCUMENT_TYPE_HEADING = "heading"
 DOCUMENT_TYPE_PLAIN = "plain"
 DOCUMENT_TYPE_SLIDE = "slide"
 DOCUMENT_TYPE_LIFELOG = "lifelog"
+DOCUMENT_TYPE_EXCEL = "excel"
 
 
 class PipelineState(TypedDict):
