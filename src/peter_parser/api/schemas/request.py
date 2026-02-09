@@ -1,4 +1,5 @@
 """Request schemas."""
+from __future__ import annotations
 
 
-# Request models will be defined here
+# Request models for pipeline API (e.g. form/file only; no JSON body for /parse)

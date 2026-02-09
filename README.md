@@ -21,13 +21,13 @@ Caller provides **document_type** at invoke; there is no automatic routing.
 | `slide`   | Presentation / slide deck                      | PDF bytes/path      | enrich → chunk       |
 | `lifelog` | 5W1H event-style daily log                      | **Raw text (str)**  | chunk (LifelogChunker) |
 
-### Lifelog: raw text input
+### Lifelog: .txt file or raw text
 
-For **lifelog**, pass the daily log as **raw text** (`str`). The pipeline does **not** call the document parser; the prepare step builds a minimal `ParsedDocument` from the text and proceeds to chunking.
+For **lifelog**, the pipeline does **not** call the document parser; the prepare step builds a minimal `ParsedDocument` from the text and proceeds to chunking.
 
-- **Python:** `flow.invoke(document="1/25 10:00\n나\n밥을\n...", document_type="lifelog")`
-- If `document` is `bytes`, it is decoded as UTF-8 before use.
-- To process a PDF that contains lifelog content, extract text first (e.g. with pymupdf) and pass the string. Example: `scripts/test_lifelog_only.py`.
+- **API:** `POST /parse` with **file** = `.txt` and **document_type** = `lifelog`. Upload a text file containing the daily log.
+- **Python:** `flow.invoke(document="1/25 10:00\n나\n밥을\n...", document_type="lifelog")` or pass `bytes` (decoded as UTF-8).
+- To use a PDF that contains lifelog content, extract text first (e.g. with pymupdf) and save as `.txt` or pass the string. Example: `scripts/test_lifelog_only.py`.
 
 ## Plain chunking (LumberChunker, page-unit)
 

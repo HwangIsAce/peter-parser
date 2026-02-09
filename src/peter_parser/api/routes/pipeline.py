@@ -5,7 +5,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from rq import Queue
 from rq.job import Job as RQJob
 
@@ -41,18 +41,42 @@ def _status_from_rq(job: RQJob) -> str:
     return "pending"
 
 
+VALID_DOCUMENT_TYPES = ("heading", "plain", "slide", "lifelog")
+
+
 @router.post("/parse", response_model=ParseResponse)
-async def parse_upload(file: UploadFile = File(...)) -> ParseResponse:
-    """Upload PDF, enqueue parse job; return job_id and status pending."""
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="PDF file required")
-    upload_dir = _ensure_upload_dir()
-    path = os.path.join(upload_dir, f"{uuid.uuid4()}.pdf")
-    content = await file.read()
-    with open(path, "wb") as f:
-        f.write(content)
+async def parse_upload(
+    file: UploadFile = File(...),
+    document_type: str = Form("plain", description="heading | plain | slide | lifelog"),
+) -> ParseResponse:
+    """Upload document: PDF (heading/plain/slide) or .txt (lifelog); enqueue job, return job_id."""
+    doc_type = (document_type or "plain").strip().lower()
+    if doc_type not in VALID_DOCUMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"document_type must be one of {VALID_DOCUMENT_TYPES}",
+        )
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File required")
+    fn_lower = file.filename.lower()
+    if doc_type == "lifelog":
+        if not fn_lower.endswith(".txt"):
+            raise HTTPException(status_code=400, detail="For lifelog, .txt file required")
+        upload_dir = _ensure_upload_dir()
+        path = os.path.join(upload_dir, f"{uuid.uuid4()}.txt")
+        content = await file.read()
+        with open(path, "wb") as f:
+            f.write(content)
+    else:
+        if not fn_lower.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="For heading/plain/slide, PDF file required")
+        upload_dir = _ensure_upload_dir()
+        path = os.path.join(upload_dir, f"{uuid.uuid4()}.pdf")
+        content = await file.read()
+        with open(path, "wb") as f:
+            f.write(content)
     queue: Queue = get_queue()
-    job = queue.enqueue(run_parse_job, path, job_timeout=600)  # 10 min for LLM/chunk_enrich
+    job = queue.enqueue(run_parse_job, path, doc_type, job_timeout=600)
     return ParseResponse(job_id=job.id, status="pending")
 
 

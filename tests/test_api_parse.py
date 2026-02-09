@@ -59,9 +59,49 @@ def test_parse_upload_returns_job_id(client, mock_queue_and_redis):
 
 
 def test_parse_upload_rejects_non_pdf(client, mock_queue_and_redis):
-    """POST /parse without PDF returns 400."""
+    """POST /parse with .txt and default document_type=plain requires PDF, returns 400."""
     response = client.post("/parse", files={"file": ("doc.txt", b"hello", "text/plain")})
     assert response.status_code == 400
+
+
+def test_parse_upload_rejects_invalid_document_type(client, mock_queue_and_redis):
+    """POST /parse with invalid document_type returns 400."""
+    pdf_content = b"%PDF-1.4 fake"
+    response = client.post(
+        "/parse",
+        files={"file": ("doc.pdf", pdf_content, "application/pdf")},
+        data={"document_type": "invalid"},
+    )
+    assert response.status_code == 400
+    assert "document_type" in (response.json().get("detail") or "")
+
+
+def test_parse_upload_lifelog_requires_txt(client, mock_queue_and_redis):
+    """POST /parse with document_type=lifelog and PDF returns 400 (lifelog requires .txt)."""
+    pdf_content = b"%PDF-1.4 fake"
+    response = client.post(
+        "/parse",
+        files={"file": ("doc.pdf", pdf_content, "application/pdf")},
+        data={"document_type": "lifelog"},
+    )
+    assert response.status_code == 400
+    detail = response.json().get("detail") or ""
+    assert "txt" in detail.lower() or "lifelog" in detail.lower()
+
+
+def test_parse_upload_lifelog_txt_returns_job_id(client, mock_queue_and_redis):
+    """POST /parse with .txt file and document_type=lifelog returns job_id."""
+    text_content = b"1/25 10:00\nna\nbap\nhome\n-\nate."
+    response = client.post(
+        "/parse",
+        files={"file": ("lifelog.txt", text_content, "text/plain")},
+        data={"document_type": "lifelog"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "job_id" in data
+    assert data["status"] == "pending"
+    assert data["job_id"] == "test-job-123"
 
 
 def test_status_returns_pending(client, mock_queue_and_redis):

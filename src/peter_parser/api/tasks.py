@@ -20,12 +20,16 @@ JOB_STORAGE_TTL = 86400 * 7
 logger = logging.getLogger(__name__)
 
 
-def run_parse_job(file_path: str) -> None:
+def run_parse_job(file_path: str, document_type: str = "plain") -> None:
     """
     RQ job: read file, run PipelineFlow.invoke(), store result in Redis.
     - job_result:{job_id}: API response for GET /result.
     - job_snapshot:{job_id}: full snapshot (for optimizer consumption).
     - slide_job_queue: list of job_id for slide docs (batch consumes).
+
+    Args:
+        file_path: Path to PDF file (.pdf) or text file (.txt for lifelog).
+        document_type: "heading" | "plain" | "slide" | "lifelog".
     """
     job = get_current_job()
     job_id = job.id if job else None
@@ -35,10 +39,24 @@ def run_parse_job(file_path: str) -> None:
     result_key = f"job_result:{job_id}"
     snapshot_key = f"job_snapshot:{job_id}"
     try:
-        with open(file_path, "rb") as f:
-            doc_bytes = f.read()
-        flow = PipelineFlow()
-        state = flow.invoke(document=doc_bytes)
+        if document_type == "lifelog":
+            with open(file_path, "r", encoding="utf-8") as f:
+                document = f.read()
+            from peter_parser_core import BaseParser
+            from peter_parser_core.common.types import ContentModel
+            from peter_parser_core import ParsedDocument
+
+            class NoOpParser(BaseParser):
+                def parse(self, doc):
+                    return ParsedDocument(content=ContentModel(text=""), elements=[], pages=[], metadata={})
+
+            flow = PipelineFlow(parser=NoOpParser())
+            state = flow.invoke(document=document, document_type="lifelog")
+        else:
+            with open(file_path, "rb") as f:
+                document = f.read()
+            flow = PipelineFlow()
+            state = flow.invoke(document=document, document_type=document_type)
         chunks = state.get("chunks") or []
         from peter_parser.api.schemas.mappers import chunks_to_result_response
 
