@@ -4,31 +4,30 @@ Document processing pipeline with optimized modules.
 
 ## Pipeline flow
 
-1. **parse** — Document (PDF, etc.) is parsed into a structured `ParsedDocument`.
-2. **route** — Document type is set: either from `invoke(document_type=...)` or by a **VLM router** (when the input is PDF bytes: a few sampled pages are rendered and sent to a vision model with few-shot examples from `assets/router_fewshot/`) or by an **LLM router** (text-only fallback).
-3. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` → **chunk** directly.
-4. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog).
-5. **chunk_enrich** — Chunk-level metadata (summary, keywords).
-6. **export** — Chunks are serialized to JSON in `state["export_json"]`.
+Caller provides **document_type** at invoke; there is no automatic routing.
 
-## Document type (4-case routing)
+1. **prepare** — Entry point. By `document_type`: **lifelog** → build minimal `ParsedDocument` from raw text (parse skipped); **heading** / **plain** / **slide** → parse document (Upstage) into `ParsedDocument`.
+2. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` → **chunk** directly.
+3. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog).
+4. **chunk_enrich** — Chunk-level metadata (summary, keywords).
+5. **export** — Chunks are serialized to JSON in `state["export_json"]`.
 
-| Type      | Description                                      | Path after route |
-|-----------|--------------------------------------------------|------------------|
-| `heading` | Structured docs with headings (papers, reports)  | chunk            |
-| `plain`   | Unstructured text (notes, blog body)              | chunk            |
-| `slide`   | Presentation / slide deck                        | enrich → chunk   |
-| `lifelog` | 5W1H event-style daily log                       | chunk (LifelogChunker) |
+## Document type (caller-provided)
 
-### Routing (VLM + few-shot)
+| Type      | Description                                      | Input (document)   | Path after prepare   |
+|-----------|--------------------------------------------------|--------------------|----------------------|
+| `heading` | Structured docs with headings (papers, reports)  | PDF bytes/path     | chunk                |
+| `plain`   | Unstructured text (notes, blog body)             | PDF bytes/path      | chunk                |
+| `slide`   | Presentation / slide deck                      | PDF bytes/path      | enrich → chunk       |
+| `lifelog` | 5W1H event-style daily log                      | **Raw text (str)**  | chunk (LifelogChunker) |
 
-When `document_type` is not provided, the route node uses **VLM** when the input is PDF bytes: the document is sampled (uniform or random) for up to **4 pages** (configurable via `ROUTER_VLM_MAX_PAGES`), rendered to images, and sent to a vision model together with **few-shot** images from `assets/router_fewshot/` (heading, slide, lifelog). If the input is not PDF or no images are produced, the **LLM** router classifies from parsed text (first 6000 chars). Few-shot images can be generated from `docs/input/` PDFs by running: `uv run python scripts/generate_router_fewshot.py`.
+### Lifelog: raw text input
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ROUTER_VLM_MAX_PAGES` | Number of pages to sample from the document for VLM | `4` |
-| `ROUTER_VLM_PAGE_SAMPLE` | Sampling strategy: `uniform` or `random` | `uniform` |
-| `ROUTER_FEWSHOT_DIR` | Directory with `heading/`, `slide/`, `lifelog/` subdirs of images | (project) `assets/router_fewshot` |
+For **lifelog**, pass the daily log as **raw text** (`str`). The pipeline does **not** call the document parser; the prepare step builds a minimal `ParsedDocument` from the text and proceeds to chunking.
+
+- **Python:** `flow.invoke(document="1/25 10:00\n나\n밥을\n...", document_type="lifelog")`
+- If `document` is `bytes`, it is decoded as UTF-8 before use.
+- To process a PDF that contains lifelog content, extract text first (e.g. with pymupdf) and pass the string. Example: `scripts/test_lifelog_only.py`.
 
 ## Plain chunking (LumberChunker, page-unit)
 
