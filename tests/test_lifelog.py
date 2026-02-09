@@ -480,14 +480,13 @@ def test_pipeline_integration():
 
 
 def test_pipeline_integration_with_document_type():
-    """Pipeline with document_type='lifelog' (4-case) instead of chunk_unit."""
+    """Pipeline with document_type='lifelog': raw text input, skip parse."""
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser_core import BaseParser
     from peter_parser_core.common.types import ContentModel
     from peter_parser_core import ParsedDocument
 
-    def sample_text():
-        return """1/25 10:00~10:30
+    sample_text = """1/25 10:00~10:30
 나
 밥을
 집에서
@@ -503,16 +502,11 @@ def test_pipeline_integration_with_document_type():
 
     class MockParser(BaseParser):
         def parse(self, document):
-            return ParsedDocument(
-                content=ContentModel(text=sample_text()),
-                elements=[],
-                pages=[],
-                metadata={"source": "mock_pdf"},
-            )
+            return ParsedDocument(content=ContentModel(text=""), elements=[], pages=[], metadata={})
 
     try:
         flow = PipelineFlow(parser=MockParser())
-        state = flow.invoke(document=b"fake", document_type="lifelog")
+        state = flow.invoke(document=sample_text, document_type="lifelog")
         assert "chunks" in state
         assert len(state["chunks"]) == 2
         assert "lifelog" in state["chunks"][0].metadata.extra
@@ -526,14 +520,13 @@ def test_pipeline_integration_with_document_type():
 
 
 def test_pipeline_integration_llm_router_driven():
-    """Pipeline with document_type='lifelog' (router removed; caller provides document_type)."""
+    """Pipeline with document_type='lifelog': raw text input, skip parse."""
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser_core import BaseParser
     from peter_parser_core.common.types import ContentModel
     from peter_parser_core import ParsedDocument
 
-    def sample_text():
-        return """1/25 10:00~10:30
+    sample_text = """1/25 10:00~10:30
 나
 밥을
 집에서
@@ -549,16 +542,11 @@ def test_pipeline_integration_llm_router_driven():
 
     class MockParser(BaseParser):
         def parse(self, document):
-            return ParsedDocument(
-                content=ContentModel(text=sample_text()),
-                elements=[],
-                pages=[],
-                metadata={"source": "mock_pdf"},
-            )
+            return ParsedDocument(content=ContentModel(text=""), elements=[], pages=[], metadata={})
 
     try:
         flow = PipelineFlow(parser=MockParser())
-        state = flow.invoke(document=b"fake", document_type="lifelog")
+        state = flow.invoke(document=sample_text, document_type="lifelog")
         assert state.get("document_type") == "lifelog"
         assert "chunks" in state
         assert len(state["chunks"]) == 2

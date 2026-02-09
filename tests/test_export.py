@@ -120,14 +120,13 @@ def test_export_node_unicode():
 
 
 def test_pipeline_export_json():
-    """Full pipeline produces export_json."""
+    """Full pipeline produces export_json (lifelog: raw text input)."""
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser_core import BaseParser
     from peter_parser_core.common.types import ContentModel
     from peter_parser_core import ParsedDocument
 
-    def sample_text():
-        return """1/25 10:00~10:30
+    sample_text = """1/25 10:00~10:30
 나
 밥을
 집에서
@@ -143,16 +142,11 @@ def test_pipeline_export_json():
 
     class MockParser(BaseParser):
         def parse(self, document):
-            return ParsedDocument(
-                content=ContentModel(text=sample_text()),
-                elements=[],
-                pages=[],
-                metadata={"source": "mock_pdf"},
-            )
+            return ParsedDocument(content=ContentModel(text=""), elements=[], pages=[], metadata={})
 
     try:
         flow = PipelineFlow(parser=MockParser())
-        state = flow.invoke(document=b"fake", document_type="lifelog")
+        state = flow.invoke(document=sample_text, document_type="lifelog")
         assert "export_json" in state
         parsed = json.loads(state["export_json"])
         assert isinstance(parsed, list)

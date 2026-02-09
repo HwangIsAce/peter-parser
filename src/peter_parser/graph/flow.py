@@ -10,7 +10,7 @@ from peter_parser.graph.states import (
     DocumentType,
     DOCUMENT_TYPE_SLIDE,
 )
-from peter_parser.graph.nodes.parse import create_parser_node
+from peter_parser.graph.nodes.prepare import create_prepare_node
 from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
 from peter_parser.graph.nodes.extract import create_extract_node, create_chunk_enrich_node
@@ -55,14 +55,14 @@ class PipelineFlow:
         """Build langgraph StateGraph"""
         graph = StateGraph(PipelineState)
 
-        graph.add_node("parse", create_parser_node(self.parser))
+        graph.add_node("prepare", create_prepare_node(self.parser))
         graph.add_node("enrich", create_extract_node())
         graph.add_node("chunk", create_chunk_node())
         graph.add_node("chunk_enrich", create_chunk_enrich_node())
         graph.add_node("export", create_export_node())
 
-        graph.set_entry_point("parse")
-        graph.add_conditional_edges("parse", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
+        graph.set_entry_point("prepare")
+        graph.add_conditional_edges("prepare", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
         graph.add_edge("enrich", "chunk")
         graph.add_edge("chunk", "chunk_enrich")
         graph.add_edge("chunk_enrich", "export")
@@ -78,7 +78,7 @@ class PipelineFlow:
         """Execute pipeline.
 
         Args:
-            document: 파싱할 Document (PDF bytes/path)
+            document: PDF bytes/path (heading/plain/slide) or raw text str (lifelog)
             document_type: "heading" | "plain" | "slide" | "lifelog". Caller must provide.
             chunk_unit: Legacy. "page" | "element" | "lifelog". Prefer document_type.
 

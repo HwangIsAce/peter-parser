@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test lifelog_sample.pdf routing and final result generation."""
+"""Test lifelog with raw text input (extract from PDF or use text file)."""
 import sys
 from pathlib import Path
 
@@ -7,27 +7,39 @@ project_root = Path(__file__).parent.parent
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
+
+def _extract_text_from_pdf(pdf_path: Path) -> str:
+    """Extract text from PDF using pymupdf (for lifelog: parse bypass)."""
+    import fitz
+    doc = fitz.open(pdf_path)
+    text = "\n".join(page.get_text() for page in doc)
+    doc.close()
+    return text
+
+
 def main() -> None:
     import os
     os.environ.setdefault("PIPELINE_PROGRESS", "1")
     from peter_parser.graph.flow import PipelineFlow
-    from peter_parser.common.config import Config
-
-    if not Config.UPSTAGE_API_KEY:
-        print("ERROR: UPSTAGE_API_KEY not set.")
-        sys.exit(1)
+    from peter_parser_core import BaseParser
+    from peter_parser_core.common.types import ContentModel
+    from peter_parser_core import ParsedDocument
 
     path = project_root / "docs" / "input" / "lifelog_sample.pdf"
     if not path.exists():
         print(f"ERROR: {path} not found")
         sys.exit(1)
 
-    print(f"Testing: {path.name}")
+    print(f"Testing: {path.name} (lifelog: text extracted from PDF)")
     print(f"Expected document_type: lifelog")
     print("-" * 50)
 
-    flow = PipelineFlow()
-    document = path.read_bytes()
+    document = _extract_text_from_pdf(path)
+    # MockParser: lifelog path skips parse, so parser is never used
+    class MockParser(BaseParser):
+        def parse(self, doc):
+            return ParsedDocument(content=ContentModel(text=""), elements=[], pages=[], metadata={})
+    flow = PipelineFlow(parser=MockParser())
     result = flow.invoke(document, document_type="lifelog")
 
     dt = result.get("document_type", "?")
