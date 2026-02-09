@@ -9,6 +9,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 os.environ.setdefault("PIPELINE_PROGRESS", "1")
+# Higher concurrency for faster heading chunk + chunk_enrich (override .env for this test)
+os.environ["CHUNKER_LLM_MAX_CONCURRENCY"] = "15"
+os.environ["CHUNK_ENRICH_MAX_CONCURRENCY"] = "15"
 
 from peter_parser.graph.flow import PipelineFlow
 
