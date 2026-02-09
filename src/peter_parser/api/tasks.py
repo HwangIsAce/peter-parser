@@ -28,8 +28,8 @@ def run_parse_job(file_path: str, document_type: str = "plain") -> None:
     - slide_job_queue: list of job_id for slide docs (batch consumes).
 
     Args:
-        file_path: Path to PDF file (.pdf) or text file (.txt for lifelog).
-        document_type: "heading" | "plain" | "slide" | "lifelog".
+        file_path: Path to PDF (.pdf), text (.txt for lifelog), or Excel (.xlsx for excel).
+        document_type: "heading" | "plain" | "slide" | "lifelog" | "excel".
     """
     job = get_current_job()
     job_id = job.id if job else None

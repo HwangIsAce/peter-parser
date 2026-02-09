@@ -41,15 +41,15 @@ def _status_from_rq(job: RQJob) -> str:
     return "pending"
 
 
-VALID_DOCUMENT_TYPES = ("heading", "plain", "slide", "lifelog")
+VALID_DOCUMENT_TYPES = ("heading", "plain", "slide", "lifelog", "excel")
 
 
 @router.post("/parse", response_model=ParseResponse)
 async def parse_upload(
     file: UploadFile = File(...),
-    document_type: str = Form("plain", description="heading | plain | slide | lifelog"),
+    document_type: str = Form("plain", description="heading | plain | slide | lifelog | excel"),
 ) -> ParseResponse:
-    """Upload document: PDF (heading/plain/slide) or .txt (lifelog); enqueue job, return job_id."""
+    """Upload document: PDF (heading/plain/slide), .txt (lifelog), or .xlsx (excel); enqueue job, return job_id."""
     doc_type = (document_type or "plain").strip().lower()
     if doc_type not in VALID_DOCUMENT_TYPES:
         raise HTTPException(
@@ -64,6 +64,14 @@ async def parse_upload(
             raise HTTPException(status_code=400, detail="For lifelog, .txt file required")
         upload_dir = _ensure_upload_dir()
         path = os.path.join(upload_dir, f"{uuid.uuid4()}.txt")
+        content = await file.read()
+        with open(path, "wb") as f:
+            f.write(content)
+    elif doc_type == "excel":
+        if not fn_lower.endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail="For excel, .xlsx file required")
+        upload_dir = _ensure_upload_dir()
+        path = os.path.join(upload_dir, f"{uuid.uuid4()}.xlsx")
         content = await file.read()
         with open(path, "wb") as f:
             f.write(content)

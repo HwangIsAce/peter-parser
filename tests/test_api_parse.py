@@ -104,6 +104,44 @@ def test_parse_upload_lifelog_txt_returns_job_id(client, mock_queue_and_redis):
     assert data["job_id"] == "test-job-123"
 
 
+def test_parse_upload_excel_requires_xlsx(client, mock_queue_and_redis):
+    """POST /parse with document_type=excel and PDF returns 400 (excel requires .xlsx)."""
+    pdf_content = b"%PDF-1.4 fake"
+    response = client.post(
+        "/parse",
+        files={"file": ("doc.pdf", pdf_content, "application/pdf")},
+        data={"document_type": "excel"},
+    )
+    assert response.status_code == 400
+    detail = response.json().get("detail") or ""
+    assert "xlsx" in detail.lower() or "excel" in detail.lower()
+
+
+def test_parse_upload_excel_xlsx_returns_job_id(client, mock_queue_and_redis):
+    """POST /parse with .xlsx file and document_type=excel returns job_id."""
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    if ws:
+        ws["A1"], ws["B1"] = "Name", "Value"
+    buf = BytesIO()
+    wb.save(buf)
+    xlsx_content = buf.getvalue()
+
+    response = client.post(
+        "/parse",
+        files={"file": ("data.xlsx", xlsx_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"document_type": "excel"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "job_id" in data
+    assert data["status"] == "pending"
+    assert data["job_id"] == "test-job-123"
+
+
 def test_status_returns_pending(client, mock_queue_and_redis):
     """GET /status/{job_id} returns status."""
     mock_queue_and_redis["job"].is_queued = True
