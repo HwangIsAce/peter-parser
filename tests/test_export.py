@@ -152,7 +152,7 @@ def test_pipeline_export_json():
 
     try:
         flow = PipelineFlow(parser=MockParser())
-        state = flow.invoke(document=b"fake", chunk_unit="lifelog")
+        state = flow.invoke(document=b"fake", document_type="lifelog")
         assert "export_json" in state
         parsed = json.loads(state["export_json"])
         assert isinstance(parsed, list)

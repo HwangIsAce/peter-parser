@@ -10,9 +10,7 @@ from peter_parser.graph.states import (
     DocumentType,
     DOCUMENT_TYPE_SLIDE,
 )
-from peter_parser.impl.router.llm_router import LLMRouter
 from peter_parser.graph.nodes.parse import create_parser_node
-from peter_parser.graph.nodes.route import create_route_node
 from peter_parser.impl.parser.upstage import UpstageParser
 from peter_parser.common.config import Config
 from peter_parser.graph.nodes.extract import create_extract_node, create_chunk_enrich_node
@@ -33,13 +31,12 @@ def _route_after_parse(state: PipelineState) -> str:
 
 class PipelineFlow:
     """Optimized pipeline flow execution engine."""
-    
-    def __init__(self, parser: BaseParser = None, router: Optional[LLMRouter] = None):
+
+    def __init__(self, parser: BaseParser = None):
         """Initialize pipeline flow
 
         Args:
-            parser: 사용할 Parser instance
-            router: Optional LLMRouter for document-type routing. If None, a new LLMRouter is used.
+            parser: 사용할 Parser instance. If None, UpstageParser is used.
         """
         if parser is None:
             Config.validate()  # 필수 설정 확인
@@ -52,48 +49,43 @@ class PipelineFlow:
             )
 
         self.parser = parser
-        self.router = router
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:
         """Build langgraph StateGraph"""
         graph = StateGraph(PipelineState)
-        
+
         graph.add_node("parse", create_parser_node(self.parser))
-        graph.add_node("route", create_route_node(self.router))
         graph.add_node("enrich", create_extract_node())
         graph.add_node("chunk", create_chunk_node())
         graph.add_node("chunk_enrich", create_chunk_enrich_node())
         graph.add_node("export", create_export_node())
-        
+
         graph.set_entry_point("parse")
-        graph.add_edge("parse", "route")
-        graph.add_conditional_edges("route", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
+        graph.add_conditional_edges("parse", _route_after_parse, {"enrich": "enrich", "chunk": "chunk"})
         graph.add_edge("enrich", "chunk")
         graph.add_edge("chunk", "chunk_enrich")
         graph.add_edge("chunk_enrich", "export")
-        
+
         return graph.compile()
     
     def invoke(
         self,
         document: bytes | str,
+        document_type: DocumentType = "plain",
         chunk_unit: Optional[str] = None,
-        document_type: Optional[DocumentType] = None,
     ) -> PipelineState:
         """Execute pipeline.
 
         Args:
-            document: 파싱할 Document
-            chunk_unit: Legacy. "page" | "element" | "lifelog" (None이면 Config.DEFAULT_CHUNK_UNIT)
-            document_type: 4-case. "heading" | "plain" | "slide" | "lifelog". Takes precedence over chunk_unit.
+            document: 파싱할 Document (PDF bytes/path)
+            document_type: "heading" | "plain" | "slide" | "lifelog". Caller must provide.
+            chunk_unit: Legacy. "page" | "element" | "lifelog". Prefer document_type.
 
         Returns:
             Final state with parsed_document, chunks, export_json.
         """
-        initial_state: PipelineState = {"document": document}
-        if document_type is not None:
-            initial_state["document_type"] = document_type
+        initial_state: PipelineState = {"document": document, "document_type": document_type}
         if chunk_unit is not None:
             initial_state["chunk_unit"] = chunk_unit
         return self.graph.invoke(initial_state)

@@ -526,13 +526,11 @@ def test_pipeline_integration_with_document_type():
 
 
 def test_pipeline_integration_llm_router_driven():
-    """Pipeline without document_type: route node calls LLMRouter; mock returns 'lifelog'."""
+    """Pipeline with document_type='lifelog' (router removed; caller provides document_type)."""
     from peter_parser.graph.flow import PipelineFlow
     from peter_parser_core import BaseParser
     from peter_parser_core.common.types import ContentModel
     from peter_parser_core import ParsedDocument
-    from peter_parser.impl.router.llm_router import LLMRouter
-    from unittest.mock import Mock
 
     def sample_text():
         return """1/25 10:00~10:30
@@ -558,17 +556,13 @@ def test_pipeline_integration_llm_router_driven():
                 metadata={"source": "mock_pdf"},
             )
 
-    mock_router = Mock(spec=LLMRouter)
-    mock_router.route.return_value = "lifelog"
-
     try:
-        flow = PipelineFlow(parser=MockParser(), router=mock_router)
-        state = flow.invoke(document=b"fake")
+        flow = PipelineFlow(parser=MockParser())
+        state = flow.invoke(document=b"fake", document_type="lifelog")
         assert state.get("document_type") == "lifelog"
         assert "chunks" in state
         assert len(state["chunks"]) == 2
         assert "lifelog" in state["chunks"][0].metadata.extra
-        mock_router.route.assert_called_once()
     except Exception as e:
         import pytest
-        pytest.skip(f"Pipeline LLM router integration test skipped: {e}")
+        pytest.skip(f"Pipeline document_type lifelog integration test skipped: {e}")

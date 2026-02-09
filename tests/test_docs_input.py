@@ -53,42 +53,13 @@ def test_document_render_docs_input_pdfs():
 
 
 # -----------------------------------------------------------------------------
-# Route node with docs/input PDF bytes (needs parse first; VLM/LLM may need API)
+# Full pipeline with docs/input PDF (document_type provided by caller)
 # -----------------------------------------------------------------------------
-
-
-def test_route_node_with_docs_input_pdf():
-    """Route node receives parsed_document + document bytes from docs/input; returns valid document_type."""
-    from peter_parser.graph.flow import PipelineFlow
-    from peter_parser.graph.nodes.route import create_route_node
-    from peter_parser.graph.nodes.parse import create_parser_node
-    from peter_parser.common.config import Config
-
-    pdfs = _docs_input_pdfs()
-    if not pdfs:
-        return
-    path = pdfs[0]
-    document = path.read_bytes()
-    route_node = create_route_node()
-    if not Config.UPSTAGE_API_KEY:
-        state = {"document": document}
-        state["parsed_document"] = type("ParsedDocument", (), {"content": type("C", (), {"text": ""})(), "metadata": {}, "title": None})()
-        result = route_node(state)
-        assert "document_type" in result
-        assert result["document_type"] in ("heading", "plain", "slide", "lifelog")
-        return
-    flow = PipelineFlow()
-    parse_node = create_parser_node(flow.parser)
-    state = {"document": document}
-    state = parse_node(state)
-    state = route_node(state)
-    dt = state.get("document_type")
-    assert dt in ("heading", "plain", "slide", "lifelog"), f"got document_type={dt}"
 
 
 @pytest.mark.timeout(600)
 def test_full_pipeline_docs_input_one_pdf():
-    """Full pipeline (parse → route → chunk → …) with one docs/input PDF. Requires API keys."""
+    """Full pipeline (parse → chunk → …) with one docs/input PDF. Requires API keys."""
     import os
     os.environ["PIPELINE_PROGRESS"] = "1"
     from peter_parser.graph.flow import PipelineFlow
@@ -101,8 +72,11 @@ def test_full_pipeline_docs_input_one_pdf():
         return  # skip without parse API
     path = pdfs[0]
     document = path.read_bytes()
+    name = path.name
+    name_nfc = unicodedata.normalize("NFC", name)
+    document_type = EXPECTED_DOCUMENT_TYPE.get(name) or EXPECTED_DOCUMENT_TYPE.get(name_nfc) or "plain"
     flow = PipelineFlow()
-    result = flow.invoke(document)
+    result = flow.invoke(document, document_type=document_type)
     assert result.get("document_type") in ("heading", "plain", "slide", "lifelog")
     assert "chunks" in result
     assert isinstance(result["chunks"], list)
@@ -130,11 +104,11 @@ def _run_full_pipeline_for_one_pdf(pdf_index: int) -> None:
     name = path.name
     name_nfc = unicodedata.normalize("NFC", name)
     expected_dt = EXPECTED_DOCUMENT_TYPE.get(name) or EXPECTED_DOCUMENT_TYPE.get(name_nfc) or (
-        EXPECTED_ORDER[pdf_index] if pdf_index < len(EXPECTED_ORDER) else None
+        EXPECTED_ORDER[pdf_index] if pdf_index < len(EXPECTED_ORDER) else "plain"
     )
     flow = PipelineFlow()
     document = path.read_bytes()
-    result = flow.invoke(document)
+    result = flow.invoke(document, document_type=expected_dt)
     dt = result.get("document_type")
     valid_types = ("heading", "plain", "slide", "lifelog")
     assert dt in valid_types, f"document_type {dt!r} not in {valid_types}"

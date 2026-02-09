@@ -69,7 +69,7 @@ def main() -> None:
 
         try:
             document = path.read_bytes()
-            result = flow.invoke(document)
+            result = flow.invoke(document, document_type=expected)
         except Exception as e:
             print(f"  FAILED: {e}")
             continue

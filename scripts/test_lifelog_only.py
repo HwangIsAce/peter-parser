@@ -28,7 +28,7 @@ def main() -> None:
 
     flow = PipelineFlow()
     document = path.read_bytes()
-    result = flow.invoke(document)
+    result = flow.invoke(document, document_type="lifelog")
 
     dt = result.get("document_type", "?")
     chunks = result.get("chunks") or []
