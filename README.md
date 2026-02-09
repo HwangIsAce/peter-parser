@@ -6,19 +6,19 @@ Document processing pipeline with optimized modules.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/parse` | Upload file + `document_type`. PDF for heading/plain/slide; .txt for lifelog. Returns `job_id`. |
+| POST | `/parse` | Upload file + `document_type`. PDF for heading/plain/slide; .txt for lifelog; .xlsx for excel. Returns `job_id`. |
 | GET | `/status/{job_id}` | Job status: pending \| processing \| completed \| failed |
 | GET | `/result/{job_id}` | Parsed chunks (when completed) |
 
-Request: `multipart/form-data` with `file` and `document_type` (heading \| plain \| slide \| lifelog).
+Request: `multipart/form-data` with `file` and `document_type` (heading \| plain \| slide \| lifelog \| excel).
 
 ## Pipeline flow
 
 Caller provides **document_type** at invoke; there is no automatic routing.
 
-1. **prepare** — Entry point. By `document_type`: **lifelog** → build minimal `ParsedDocument` from raw text (parse skipped); **heading** / **plain** / **slide** → parse document (Upstage) into `ParsedDocument`.
-2. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` → **chunk** directly.
-3. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog).
+1. **prepare** — Entry point. By `document_type`: **lifelog** → build minimal `ParsedDocument` from raw text (parse skipped); **excel** → parse .xlsx (ExcelParser); **heading** / **plain** / **slide** → parse document (Upstage) into `ParsedDocument`.
+2. **Conditional branch** — Only `slide` → **enrich** (document summary + per-page title/script); `heading` / `plain` / `lifelog` / `excel` → **chunk** directly.
+3. **chunk** — Chunking by document type: HeadingPromptChunker (heading), LumberChunker (plain), VLMChunker (slide), LifelogChunker (lifelog), ExcelChunker (excel).
 4. **chunk_enrich** — Chunk-level metadata (summary, keywords).
 5. **export** — Chunks are serialized to JSON in `state["export_json"]`.
 
@@ -27,9 +27,10 @@ Caller provides **document_type** at invoke; there is no automatic routing.
 | Type      | Description                                      | Input (document)   | Path after prepare   |
 |-----------|--------------------------------------------------|--------------------|----------------------|
 | `heading` | Structured docs with headings (papers, reports)  | PDF bytes/path     | chunk                |
-| `plain`   | Unstructured text (notes, blog body)             | PDF bytes/path      | chunk                |
-| `slide`   | Presentation / slide deck                      | PDF bytes/path      | enrich → chunk       |
-| `lifelog` | 5W1H event-style daily log                      | **Raw text (str)**  | chunk (LifelogChunker) |
+| `plain`   | Unstructured text (notes, blog body)             | PDF bytes/path     | chunk                |
+| `slide`   | Presentation / slide deck                        | PDF bytes/path     | enrich → chunk       |
+| `lifelog` | 5W1H event-style daily log                       | **Raw text (str)** | chunk (LifelogChunker) |
+| `excel`   | Spreadsheet (.xlsx)                              | **.xlsx bytes/path** | chunk (ExcelChunker) |
 
 ### Lifelog: .txt file or raw text
 
@@ -38,6 +39,20 @@ For **lifelog**, the pipeline does **not** call the document parser; the prepare
 - **API:** `POST /parse` with **file** = `.txt` and **document_type** = `lifelog`. Upload a text file containing the daily log.
 - **Python:** `flow.invoke(document="1/25 10:00\n나\n밥을\n...", document_type="lifelog")` or pass `bytes` (decoded as UTF-8).
 - To use a PDF that contains lifelog content, extract text first (e.g. with pymupdf) and save as `.txt` or pass the string. Example: `scripts/test_lifelog_only.py`.
+
+## Excel chunking (.xlsx)
+
+For **excel**, the prepare step uses **ExcelParser** (openpyxl) to parse `.xlsx` into `ParsedDocument` (one `Page` per sheet, cells as `Table`). The chunk stage uses **ExcelChunker**.
+
+- **API:** `POST /parse` with **file** = `.xlsx` and **document_type** = `excel`.
+- **Python:** `flow.invoke(document=xlsx_bytes, document_type="excel")` or `document=str(path_to_xlsx)`.
+- **Chunking strategy:** Sheet-based (one chunk per sheet) by default. Set `EXCEL_CHUNK_ROWS` > 0 to chunk by N rows per sheet.
+
+| Env Variable | Description | Default |
+|--------------|-------------|---------|
+| `EXCEL_CHUNK_ROWS` | Rows per chunk; 0 = one chunk per sheet | `0` |
+
+Chunk `metadata.extra.excel` includes `sheet_name` and `unit_range`.
 
 ## Plain chunking (LumberChunker, page-unit)
 
