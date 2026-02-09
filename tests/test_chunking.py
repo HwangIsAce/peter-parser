@@ -818,6 +818,35 @@ def test_chunk_node_lumber_selection():
     print("✓ chunk_node LumberChunker selection test passed")
 
 
+def test_chunk_node_excel_selection():
+    """Test chunk_node uses ExcelChunker when document_type is excel."""
+    from peter_parser.graph.nodes.chunk import create_chunk_node
+    from peter_parser.graph.states import DOCUMENT_TYPE_EXCEL, PipelineState
+
+    # Excel-style doc: pages with text, no elements
+    pages = [
+        Page(page_number=1, text="Name\tValue\nfoo\t100", tables=[], images=[]),
+        Page(page_number=2, text="ID\tAmount\n1\t100", tables=[], images=[]),
+    ]
+    parsed_doc = ParsedDocument(
+        pages=pages,
+        elements=[],
+        content=ContentModel(text="Name\tValue\nfoo\t100\n\nID\tAmount\n1\t100"),
+        metadata={"source": "excel", "sheet_names": ["Sheet1", "Sheet2"], "num_sheets": 2},
+    )
+    state: PipelineState = {
+        "parsed_document": parsed_doc,
+        "document_type": DOCUMENT_TYPE_EXCEL,
+    }
+    chunk_node = create_chunk_node()
+    result = chunk_node(state)
+    assert "chunks" in result
+    assert "parsed_document" in result
+    assert len(result["chunks"]) == 2
+    assert result["chunks"][0].metadata.extra.get("excel", {}).get("sheet_name") == "Sheet1"
+    assert result["chunks"][1].metadata.extra.get("excel", {}).get("sheet_name") == "Sheet2"
+
+
 def test_flow_lumber_skip_enrich():
     """Test Flow에서 Lumber 사용 시 enrich 스킵."""
     print("\n" + "=" * 60)
