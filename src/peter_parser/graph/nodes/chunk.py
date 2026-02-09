@@ -9,11 +9,13 @@ from peter_parser.graph.states import (
     DOCUMENT_TYPE_PLAIN,
     DOCUMENT_TYPE_SLIDE,
     DOCUMENT_TYPE_LIFELOG,
+    DOCUMENT_TYPE_EXCEL,
 )
 from peter_parser.impl.chunker.vlm import VLMChunker
 from peter_parser.impl.chunker.lumber import LumberChunker
 from peter_parser.impl.chunker.lifelog import LifelogChunker
 from peter_parser.impl.chunker.heading import HeadingPromptChunker
+from peter_parser.impl.chunker.excel import ExcelChunker
 from peter_parser.impl.db.lifelog_store import LifelogStore
 
 def create_chunk_node(
@@ -32,7 +34,7 @@ def create_chunk_node(
         if Config.PIPELINE_PROGRESS:
             dt = state.get("document_type")
             cu = state.get("chunk_unit") or Config.DEFAULT_CHUNK_UNIT
-            mode = "lifelog" if (dt == DOCUMENT_TYPE_LIFELOG or cu == "lifelog") else ("slide" if dt == DOCUMENT_TYPE_SLIDE else ("heading" if dt == DOCUMENT_TYPE_HEADING else "plain"))
+            mode = "lifelog" if (dt == DOCUMENT_TYPE_LIFELOG or cu == "lifelog") else ("excel" if dt == DOCUMENT_TYPE_EXCEL else ("slide" if dt == DOCUMENT_TYPE_SLIDE else ("heading" if dt == DOCUMENT_TYPE_HEADING else "plain")))
             print(f"[Pipeline] Step: chunk (mode={mode}, LLM per event/page)...", file=sys.stderr, flush=True)
         parsed_document = state.get("parsed_document")
         if not parsed_document:
@@ -47,10 +49,13 @@ def create_chunk_node(
         use_slide = document_type == DOCUMENT_TYPE_SLIDE or chunk_unit == "page"
         use_lifelog = document_type == DOCUMENT_TYPE_LIFELOG or chunk_unit == "lifelog"
         use_heading = document_type == DOCUMENT_TYPE_HEADING
+        use_excel = document_type == DOCUMENT_TYPE_EXCEL
 
         # Initialize chunker if needed
         if chunker is not None:
             current_chunker = chunker
+        elif use_excel:
+            current_chunker = ExcelChunker()
         elif use_lifelog:
             try:
                 lifelog_store = LifelogStore()

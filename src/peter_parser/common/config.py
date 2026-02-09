@@ -53,6 +53,9 @@ class Config:
 
     # Heading prompt-based chunking (10-page windows)
     HEADING_CHUNK_MAX_PAGES: int = int(os.getenv("HEADING_CHUNK_MAX_PAGES", "10"))
+
+    # Excel chunking: 0 = one chunk per sheet; >0 = rows per chunk
+    EXCEL_CHUNK_ROWS: int = int(os.getenv("EXCEL_CHUNK_ROWS", "0"))
     
     # Lifelog Chunking Configuration
     JANUSGRAPH_HOST: str = os.getenv("JANUSGRAPH_HOST", "localhost")
