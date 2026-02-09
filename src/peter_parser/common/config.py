@@ -58,17 +58,15 @@ class Config:
     JANUSGRAPH_HOST: str = os.getenv("JANUSGRAPH_HOST", "localhost")
     JANUSGRAPH_PORT: int = int(os.getenv("JANUSGRAPH_PORT", "8182"))
 
-    # LLM Router (document-type classification)
+    # Router (document-type classification) — not used by current pipeline; caller provides document_type.
+    # Kept for future use if router is re-enabled (see graph/nodes/route.py).
     ROUTER_CONTENT_MAX_CHARS: int = int(os.getenv("ROUTER_CONTENT_MAX_CHARS", "6000"))
-    # Router mode: "llm" = parsed text only (fast), "vlm" = page images (legacy)
     ROUTER_MODE: str = os.getenv("ROUTER_MODE", "llm").lower()  # llm | vlm
-    # LLM Router: sample up to N pages of text from parsed_document
     ROUTER_LLM_MAX_PAGES: int = int(os.getenv("ROUTER_LLM_MAX_PAGES", "5"))
-    ROUTER_LLM_PAGE_SAMPLE: str = os.getenv("ROUTER_LLM_PAGE_SAMPLE", "random")  # random | uniform
-    # VLM Router (sample pages from document for classification)
+    ROUTER_LLM_PAGE_SAMPLE: str = os.getenv("ROUTER_LLM_PAGE_SAMPLE", "random")
     ROUTER_VLM_MAX_PAGES: int = int(os.getenv("ROUTER_VLM_MAX_PAGES", "4"))
-    ROUTER_VLM_PAGE_SAMPLE: str = os.getenv("ROUTER_VLM_PAGE_SAMPLE", "uniform")  # uniform | random
-    ROUTER_FEWSHOT_DIR: str = os.getenv("ROUTER_FEWSHOT_DIR", "")  # default: assets/router_fewshot
+    ROUTER_VLM_PAGE_SAMPLE: str = os.getenv("ROUTER_VLM_PAGE_SAMPLE", "uniform")
+    ROUTER_FEWSHOT_DIR: str = os.getenv("ROUTER_FEWSHOT_DIR", "")
 
     # Pipeline progress (print current step to stderr; set to 1 for tests/debug)
     PIPELINE_PROGRESS: bool = os.getenv("PIPELINE_PROGRESS", "0").lower() in ("1", "true", "yes")

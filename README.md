@@ -2,6 +2,16 @@
 
 Document processing pipeline with optimized modules.
 
+## API (summary)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/parse` | Upload file + `document_type`. PDF for heading/plain/slide; .txt for lifelog. Returns `job_id`. |
+| GET | `/status/{job_id}` | Job status: pending \| processing \| completed \| failed |
+| GET | `/result/{job_id}` | Parsed chunks (when completed) |
+
+Request: `multipart/form-data` with `file` and `document_type` (heading \| plain \| slide \| lifelog).
+
 ## Pipeline flow
 
 Caller provides **document_type** at invoke; there is no automatic routing.
