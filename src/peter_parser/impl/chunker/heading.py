@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -23,19 +24,27 @@ from peter_parser_core.common.types import Chunk, ChunkMetadata, Element
 # -----------------------------------------------------------------------------
 
 
+logger = logging.getLogger(__name__)
+
+
 class HeadingChunkItem(BaseModel):
     """Single chunk with heading level and title. Indices are segment-based within the window text."""
 
     start_index: int = Field(description="0-based segment index where this chunk starts (within the window)")
     end_index: int = Field(description="0-based segment index where this chunk ends (exclusive)")
     level: Literal[1, 2, 3] = Field(description="1=heading1, 2=heading2, 3=heading3")
-    title: str = Field(description="Heading text for this chunk (e.g. section title)")
+    title: str = Field(
+        description="Heading text for this section (required; do not leave empty when a heading exists)"
+    )
 
 
 class HeadingChunksOutput(BaseModel):
     """LLM response: list of chunks with heading hierarchy for one window."""
 
-    chunks: List[HeadingChunkItem] = Field(default_factory=list, description="Chunks in order")
+    chunks: List[HeadingChunkItem] = Field(
+        default_factory=list,
+        description="One chunk per section; typically 3-10+ when document has headings",
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -139,8 +148,19 @@ class HeadingPromptChunker:
                     key_attr="name",
                     value_attr="description",
                 )
-            except Exception:
+            except Exception as e:
+                logger.exception("Heading chunk LLM call failed (win_idx=%d): %s", win_idx, e)
                 result = HeadingChunksOutput(chunks=[])
+
+            n_segments = text.count("\n") + (1 if text.strip() else 0)
+            if n_segments >= 15 and len(result.chunks) <= 1:
+                logger.warning(
+                    "LLM returned only %d chunk(s) for %d segments (win_idx=%d); expected more for heading docs",
+                    len(result.chunks),
+                    n_segments,
+                    win_idx,
+                )
+
             local_b = sorted(set(c.start_index for c in result.chunks if c.start_index > 0))
             infos = _heading_infos_from_items(result.chunks)
             return (win_idx, global_start, local_b, infos)
