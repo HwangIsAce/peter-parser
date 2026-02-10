@@ -35,6 +35,8 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")  # e.g. http://194.68.245.144:8001/v1
     OPENAI_VISION_BASE_URL: str = os.getenv("OPENAI_VISION_BASE_URL", "")  # e.g. http://194.68.245.144:8002/v1
+    # Batch API: POST /v1/chat/completions/batch with {"requests": [...]}; if set, heading chunker uses it
+    OPENAI_BATCH_URL: str = os.getenv("OPENAI_BATCH_URL", "")  # e.g. http://localhost:8000/v1/chat/completions/batch
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_VISION_MODEL: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")  # Vision용
     # VLM 요청 형식: "openai" (content 배열+image_url) | "runpod" (content 문자열+image_base64)

@@ -1,8 +1,10 @@
 """Structured LLM/VLM implementation for generating structured outputs."""
 import asyncio
+import json
 import nest_asyncio
 import base64
 import instructor
+import requests
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from pydantic import BaseModel
 
@@ -325,3 +327,91 @@ class StructuredLLM(BaseLLM):
             temperature=kwargs.get("temperature", 0.0),
             max_tokens=kwargs.get("max_tokens", 2048),
         )
+
+    async def astructure_output_batch(
+        self,
+        requests: List[Dict[str, Any]],
+        datamodel: Optional[type[BaseModel]] = None,
+        **kwargs
+    ) -> List[BaseModel]:
+        """Batch structured output via /v1/chat/completions/batch.
+
+        Each item in requests must have: instruction, user_system_prompt (optional),
+        key_attr, value_attr. Uses OPENAI_BATCH_URL when set.
+        Returns list of parsed datamodel instances (or empty on failure).
+        """
+        if datamodel is None:
+            datamodel = self.datamodel
+        batch_url = getattr(Config, "OPENAI_BATCH_URL", None) or ""
+        if not batch_url:
+            raise ValueError("OPENAI_BATCH_URL not set; cannot use batch API")
+
+        model = kwargs.get("model", Config.OPENAI_MODEL)
+        max_tokens = kwargs.get("max_tokens", 2048)
+        key_attr = kwargs.get("key_attr", "name")
+        value_attr = kwargs.get("value_attr", "description")
+
+        payload_requests: List[Dict[str, Any]] = []
+        for req in requests:
+            instruction = req.get("instruction", "")
+            user_system_prompt = req.get("user_system_prompt", " ")
+            system = (
+                STRUCTURED_OUTPUT_SYSTEM_PROMPT
+                if user_system_prompt == " "
+                else user_system_prompt
+            )
+            structure_info = self._get_structure_information(
+                key_attr=req.get("key_attr", key_attr),
+                value_attr=req.get("value_attr", value_attr),
+            )
+            user = STRUCTURED_OUTPUT_PROMPT.format(
+                user_question=instruction,
+                structure_information=self._format_structure_for_prompt(structure_info),
+            )
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ]
+            payload_requests.append({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            })
+
+        batch_data = {"requests": payload_requests}
+        headers = {
+            "Authorization": f"Bearer {Config.OPENAI_API_KEY or 'dummy'}",
+            "Content-Type": "application/json",
+        }
+
+        def _sync_post():
+            return requests.post(
+                batch_url,
+                json=batch_data,
+                headers=headers,
+                timeout=600,
+            )
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, _sync_post)
+        response.raise_for_status()
+        result = response.json()
+
+        responses = result.get("responses", [])
+        outputs: List[BaseModel] = []
+        for i, resp in enumerate(responses):
+            try:
+                content = ""
+                if isinstance(resp, dict):
+                    choices = resp.get("choices", [])
+                    if choices:
+                        msg = choices[0].get("message", {})
+                        content = msg.get("content", "") or ""
+                if not content:
+                    outputs.append(datamodel())
+                    continue
+                raw = json.loads(content) if isinstance(content, str) else content
+                outputs.append(datamodel.model_validate(raw))
+            except Exception:
+                outputs.append(datamodel())
+        return outputs

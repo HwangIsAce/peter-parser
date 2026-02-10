@@ -98,6 +98,17 @@ def _elements_in_page_range(
     return indices, [elements[i] for i in indices]
 
 
+def _dedupe_heading_path(path: List[str]) -> List[str]:
+    """Remove consecutive duplicates in heading_path (e.g. [A, B, B] -> [A, B])."""
+    if not path:
+        return path
+    out: List[str] = [path[0]]
+    for x in path[1:]:
+        if x != out[-1]:
+            out.append(x)
+    return out
+
+
 def _heading_infos_from_items(items: List[HeadingChunkItem]) -> List[Dict[str, Any]]:
     """Build list of {heading1, heading2, heading3, heading_path} per chunk from LLM items."""
     h1, h2, h3 = "", "", ""
@@ -109,7 +120,7 @@ def _heading_infos_from_items(items: List[HeadingChunkItem]) -> List[Dict[str, A
             h2, h3 = c.title, ""
         else:
             h3 = c.title
-        path = [x for x in [h1, h2, h3] if x]
+        path = _dedupe_heading_path([x for x in [h1, h2, h3] if x])
         infos.append({
             "heading1": h1,
             "heading2": h2,
@@ -197,19 +208,57 @@ class HeadingPromptChunker:
             self._last_heading_infos = []
             return []
 
-        max_concurrency = max(1, getattr(Config, "CHUNKER_LLM_MAX_CONCURRENCY", 5))
-        semaphore = asyncio.Semaphore(max_concurrency)
-        tasks = [
-            self._process_one_window(semaphore, win_idx, global_start, text, max_pages)
-            for win_idx, global_start, text in tasks_data
-        ]
+        batch_url = getattr(Config, "OPENAI_BATCH_URL", None) or ""
+        use_batch = bool(batch_url and len(tasks_data) > 1)
 
-        async def _gather_all():
-            return await asyncio.gather(*tasks)
+        if use_batch:
+            batch_requests = [
+                {
+                    "instruction": HEADING_CHUNK_USER_PROMPT.format(
+                        max_pages=max_pages,
+                        text=text,
+                    ),
+                    "user_system_prompt": HEADING_CHUNK_SYSTEM_PROMPT,
+                    "key_attr": "name",
+                    "value_attr": "description",
+                }
+                for _, _, text in tasks_data
+            ]
+            try:
+                batch_results = self.llm._run_async(
+                    self.llm.astructure_output_batch(
+                        batch_requests,
+                        datamodel=HeadingChunksOutput,
+                    )
+                )
+            except Exception as e:
+                logger.exception("Heading chunk batch LLM call failed: %s", e)
+                batch_results = [HeadingChunksOutput(chunks=[]) for _ in tasks_data]
+            results = []
+            for (win_idx, global_start, text), result in zip(tasks_data, batch_results):
+                n_segments = text.count("\n") + (1 if text.strip() else 0)
+                if n_segments >= 15 and len(result.chunks) <= 1:
+                    logger.warning(
+                        "LLM returned only %d chunk(s) for %d segments (win_idx=%d)",
+                        len(result.chunks),
+                        n_segments,
+                        win_idx,
+                    )
+                local_b = sorted(set(c.start_index for c in result.chunks if c.start_index > 0))
+                infos = _heading_infos_from_items(result.chunks)
+                results.append((win_idx, global_start, local_b, infos))
+        else:
+            max_concurrency = max(1, getattr(Config, "CHUNKER_LLM_MAX_CONCURRENCY", 5))
+            semaphore = asyncio.Semaphore(max_concurrency)
+            tasks = [
+                self._process_one_window(semaphore, win_idx, global_start, text, max_pages)
+                for win_idx, global_start, text in tasks_data
+            ]
 
-        results: List[Tuple[int, int, List[int], List[Dict[str, Any]]]] = self.llm._run_async(
-            _gather_all()
-        )
+            async def _gather_all():
+                return await asyncio.gather(*tasks)
+
+            results = self.llm._run_async(_gather_all())
 
         all_boundaries: List[int] = []
         all_heading_infos: List[Dict[str, Any]] = []
@@ -232,46 +281,78 @@ class HeadingPromptChunker:
 
         extra keys (heading docs only): heading1, heading2, heading3 (str; empty if absent),
         heading_path (list of strings, e.g. [h1, h2, h3]). Export and API may use these.
+        Merges empty chunks into the previous chunk; dedupes consecutive heading_path entries.
         """
         elements = getattr(parsed_document, "elements", None) or []
         if not elements:
             return [], parsed_document
+        n_el = len(elements)
         doc_title = doc_title or getattr(parsed_document, "title", None) or ""
-        all_b = [0] + sorted(chunk_boundaries) + [len(elements)]
-        chunks: List[Chunk] = []
-        element_chunk_map: Dict[int, str] = {}
+        valid_b = [b for b in chunk_boundaries if 0 < b < n_el]
+        all_b = [0] + sorted(valid_b) + [n_el]
+        raw_chunks: List[Tuple[int, int, str, Dict[str, Any]]] = []
         heading_infos = getattr(self, "_last_heading_infos", []) or []
         for i in range(len(all_b) - 1):
             start_idx, end_idx = all_b[i], all_b[i + 1]
             chunk_el = elements[start_idx:end_idx]
             chunk_text = "\n".join([getattr(el, "text", "") or "" for el in chunk_el])
-            first_page = chunk_el[0].page_number if chunk_el else None
             extra: Dict[str, Any] = {
                 "element_indices": list(range(start_idx, end_idx)),
                 "element_ids": [el.element_id for el in chunk_el],
             }
             if i < len(heading_infos):
+                hp = heading_infos[i].get("heading_path", [])
                 extra["heading1"] = heading_infos[i].get("heading1", "")
                 extra["heading2"] = heading_infos[i].get("heading2", "")
                 extra["heading3"] = heading_infos[i].get("heading3", "")
-                extra["heading_path"] = heading_infos[i].get("heading_path", [])
+                extra["heading_path"] = _dedupe_heading_path(hp) if hp else []
+            raw_chunks.append((start_idx, end_idx, chunk_text, extra))
+
+        # Merge empty chunks into next chunk (keeps content; absorbs preceding empties)
+        chunks: List[Chunk] = []
+        element_chunk_map: Dict[int, str] = {}
+        i = 0
+        while i < len(raw_chunks):
+            start_idx, end_idx, chunk_text, extra = raw_chunks[i]
+            merged_start, merged_end = start_idx, end_idx
+            merged_extra = dict(extra)
+            while chunk_text.strip() == "" and i + 1 < len(raw_chunks):
+                _, next_end, _, next_extra = raw_chunks[i + 1]
+                merged_end = min(next_end, n_el)
+                merged_extra = dict(next_extra)
+                merged_extra["element_indices"] = list(
+                    range(merged_start, merged_end)
+                )
+                merged_extra["element_ids"] = [
+                    elements[j].element_id for j in range(merged_start, merged_end)
+                ]
+                i += 1
+                _, _, chunk_text, _ = raw_chunks[i]
+            merged_end = min(merged_end, n_el)
+            merged_text = "\n".join(
+                getattr(elements[j], "text", "") or ""
+                for j in range(merged_start, merged_end)
+            )
+            chunk_el = elements[merged_start:merged_end]
+            first_page = chunk_el[0].page_number if chunk_el else None
             meta = ChunkMetadata(
                 page_number=first_page,
-                chunk_size=len(chunk_text),
-                start_index=start_idx,
-                end_index=end_idx - 1,
-                extra=extra,
+                chunk_size=len(merged_text),
+                start_index=merged_start,
+                end_index=merged_end - 1,
+                extra=merged_extra,
             )
             ch = Chunk(
                 uuid=str(uuid.uuid4()),
                 doc_title=doc_title,
-                chunk=chunk_text,
-                chunk_order=i,
+                chunk=merged_text,
+                chunk_order=len(chunks),
                 metadata=meta,
             )
             chunks.append(ch)
             for el in chunk_el:
                 element_chunk_map[el.element_id] = ch.uuid
+            i += 1
         updated_el: List[Element] = []
         for el in parsed_document.elements:
             if el.element_id in element_chunk_map:
